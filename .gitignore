@@ -1,0 +1,2 @@
+node_modules/\ndist/\n__pycache__/\n*.pyc\nwuai.db\n.DS_Store
+__pycache__/
