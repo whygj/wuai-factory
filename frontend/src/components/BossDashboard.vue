@@ -2,116 +2,143 @@
   <div class="boss-dashboard">
     <h2 class="page-title">经营总览</h2>
 
-    <!-- KPI Cards Row 1 -->
+    <!-- Row 1: Core KPIs (4 cols) -->
     <el-row :gutter="16" class="kpi-row">
-      <el-col :xs="12" :sm="8" :md="4">
-        <KpiCard label="今日销售额" :value="'¥' + (data.today_sales || 0)" icon="💰" color="#E65100" @click="$router.push('/sales-orders')" style="cursor:pointer" />
+      <el-col :xs="12" :sm="12" :md="6">
+        <KpiCard label="今日销售额" :value="'¥' + (data.today_sales || 0)" :icon="Money" color="#E65100" @click="$router.push('/sales-orders')" />
       </el-col>
-      <el-col :xs="12" :sm="8" :md="4">
+      <el-col :xs="12" :sm="12" :md="6">
         <div class="kpi-with-change" @click="$router.push('/sales-orders')" style="cursor:pointer">
-          <KpiCard label="本月销售额" :value="'¥' + (data.month_sales || 0)" icon="📊" color="#E65100" />
+          <KpiCard label="本月销售额" :value="'¥' + (data.month_sales || 0)" :icon="TrendCharts" color="#E65100" />
           <span class="change-tag" :class="{ up: data.month_change > 0, down: data.month_change < 0 }">
             {{ data.month_change > 0 ? '↑' : '↓' }} {{ Math.abs(data.month_change || 0) }}%
           </span>
         </div>
       </el-col>
-      <el-col :xs="12" :sm="8" :md="4">
-        <KpiCard label="应收款总额" :value="'¥' + (data.receivables_total || 0)" icon="📋" color="#F44336" @click="$router.push('/receivables')" style="cursor:pointer" />
+      <el-col :xs="12" :sm="12" :md="6">
+        <KpiCard label="应收款总额" :value="'¥' + (data.receivables_total || 0)" :icon="Document" color="#F44336" @click="$router.push('/receivables')" />
       </el-col>
-      <el-col :xs="12" :sm="8" :md="4">
+      <el-col :xs="12" :sm="12" :md="6">
         <div class="kpi-wrap" @click="$router.push('/receivables')" style="cursor:pointer">
-          <KpiCard label="逾期应收款" :value="'¥' + (data.receivables_overdue || 0)" icon="⚠️" color="#D32F2F" />
+          <KpiCard label="逾期应收款" :value="'¥' + (data.receivables_overdue || 0)" :icon="Warning" color="#D32F2F" />
           <span v-if="data.receivables_overdue > 0" class="overdue-hint">需关注</span>
         </div>
       </el-col>
-      <el-col :xs="12" :sm="8" :md="4">
-        <KpiCard label="库存预警" :value="data.alert_count || 0" icon="📦" color="#FF9800" @click="$router.push('/materials')" style="cursor:pointer" />
-      </el-col>
-      <el-col :xs="12" :sm="8" :md="4">
-        <KpiCard label="今日产量" :value="data.today_production || 0" icon="🏭" color="#4CAF50" @click="$router.push('/production/new')" style="cursor:pointer" />
-      </el-col>
     </el-row>
 
-    <!-- KPI Cards Row 2 -->
+    <!-- Row 2: Operational KPIs + Quick Search (3 cols) -->
     <el-row :gutter="16" class="kpi-row">
       <el-col :xs="12" :sm="8">
-        <KpiCard label="待发货订单" :value="data.shipments_pending || 0" icon="🚚" color="#1976D2" @click="$router.push('/sales-orders')" style="cursor:pointer" />
+        <KpiCard label="库存预警" :value="data.alert_count || 0" :icon="Box" color="#FF9800" @click="$router.push('/materials')" />
       </el-col>
       <el-col :xs="12" :sm="8">
-        <KpiCard label="待审核用户" :value="data.pending_users || 0" icon="👥" color="#7B1FA2" @click="$router.push('/users')" style="cursor:pointer" />
+        <KpiCard label="今日产量" :value="data.today_production || 0" :icon="OfficeBuilding" color="#4CAF50" @click="$router.push('/production/new')" />
       </el-col>
       <el-col :xs="24" :sm="8">
-        <el-card class="quick-search-card">
-          <div class="search-box">
-            <el-input v-model="searchKeyword" placeholder="搜索客户/订单/产品..." size="large" @keyup.enter="doSearch" clearable>
-              <template #prefix><span>🔍</span></template>
-            </el-input>
-            <el-button type="primary" size="large" @click="doSearch" style="margin-left: 8px;">查询</el-button>
-          </div>
-        </el-card>
+        <div class="quick-search-card">
+          <el-input v-model="searchKeyword" placeholder="搜索客户/订单/产品..." size="large" @keyup.enter="doSearch" clearable class="search-input">
+            <template #prefix><el-icon><Search /></el-icon></template>
+          </el-input>
+          <el-button type="primary" size="large" @click="doSearch" class="search-btn">查询</el-button>
+        </div>
       </el-col>
     </el-row>
 
-    <!-- Search Results -->
+    <!-- Search Results Dialog -->
     <el-dialog v-model="showSearchResults" title="搜索结果" width="700px">
       <div v-if="searchResults.customers && searchResults.customers.length">
-        <h4>👥 客户</h4>
+        <h4 class="result-heading">客户</h4>
         <el-table :data="searchResults.customers" size="small" @row-click="r => $router.push('/customers')" style="cursor:pointer; margin-bottom:16px;">
           <el-table-column prop="name" label="名称" /><el-table-column prop="phone" label="电话" /><el-table-column prop="type" label="类型" />
         </el-table>
       </div>
       <div v-if="searchResults.orders && searchResults.orders.length">
-        <h4>📋 订单</h4>
+        <h4 class="result-heading">订单</h4>
         <el-table :data="searchResults.orders" size="small" @row-click="r => $router.push('/sales-orders')" style="cursor:pointer; margin-bottom:16px;">
           <el-table-column prop="order_no" label="订单号" /><el-table-column prop="customer_name" label="客户" /><el-table-column prop="total_amount" label="金额" /><el-table-column prop="status" label="状态" />
         </el-table>
       </div>
       <div v-if="searchResults.products && searchResults.products.length">
-        <h4>📦 产品</h4>
+        <h4 class="result-heading">产品</h4>
         <el-table :data="searchResults.products" size="small" @row-click="r => $router.push('/products')" style="cursor:pointer; margin-bottom:16px;">
           <el-table-column prop="name" label="名称" /><el-table-column prop="stock" label="库存" /><el-table-column prop="unit" label="单位" />
         </el-table>
       </div>
       <div v-if="searchResults.suppliers && searchResults.suppliers.length">
-        <h4>🏭 供应商</h4>
+        <h4 class="result-heading">供应商</h4>
         <el-table :data="searchResults.suppliers" size="small" @row-click="r => $router.push('/suppliers')" style="cursor:pointer; margin-bottom:16px;">
           <el-table-column prop="name" label="名称" /><el-table-column prop="phone" label="电话" /><el-table-column prop="category" label="类别" />
         </el-table>
       </div>
-      <div v-if="hasNoResults" style="text-align:center; color:#999; padding:24px;">未找到相关结果</div>
+      <div v-if="hasNoResults" class="empty-text">未找到相关结果</div>
     </el-dialog>
 
-    <!-- Charts Row -->
-    <el-row :gutter="16" class="charts-row">
-      <el-col :xs="24" :sm="14">
-        <el-card class="chart-card">
-          <template #header><span class="chart-title">近30天销售趋势</span></template>
-          <v-chart :option="salesTrendOption" style="height: 320px" autoresize />
+    <!-- Row 3: Pending Items (2 cols) -->
+    <el-row :gutter="16" class="pending-row">
+      <el-col :xs="24" :sm="12">
+        <el-card class="section-card" @click="$router.push('/sales-orders')" style="cursor:pointer">
+          <template #header>
+            <div class="section-header">
+              <el-icon class="section-icon" style="color: #1976D2"><Van /></el-icon>
+              <span class="section-title">待发货订单</span>
+              <el-tag v-if="data.shipments_pending > 0" type="danger" size="small" round>{{ data.shipments_pending }}</el-tag>
+            </div>
+          </template>
+          <div v-if="data.shipments_pending > 0" class="pending-count">{{ data.shipments_pending }} 笔待发货</div>
+          <div v-else class="empty-text">暂无待发货订单</div>
         </el-card>
       </el-col>
-      <el-col :xs="24" :sm="10">
-        <el-card class="chart-card">
-          <template #header><span class="chart-title">本月客户TOP5</span></template>
-          <v-chart :option="customerTop5Option" style="height: 320px" autoresize />
+      <el-col :xs="24" :sm="12">
+        <el-card class="section-card" @click="$router.push('/users')" style="cursor:pointer">
+          <template #header>
+            <div class="section-header">
+              <el-icon class="section-icon" style="color: #7B1FA2"><User /></el-icon>
+              <span class="section-title">待审核用户</span>
+              <el-tag v-if="data.pending_users > 0" type="warning" size="small" round>{{ data.pending_users }}</el-tag>
+            </div>
+          </template>
+          <div v-if="data.pending_users > 0" class="pending-count">{{ data.pending_users }} 人待审核</div>
+          <div v-else class="empty-text">暂无待审核用户</div>
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- Product TOP5 -->
+    <!-- Row 4: Charts (2 cols: 14+10) -->
+    <el-row :gutter="16" class="charts-row">
+      <el-col :xs="24" :md="14">
+        <el-card class="chart-card">
+          <template #header><span class="chart-title">近30天销售趋势</span></template>
+          <v-chart :option="salesTrendOption" style="height: 360px" autoresize />
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :md="10">
+        <el-card class="chart-card">
+          <template #header><span class="chart-title">本月客户TOP5</span></template>
+          <v-chart :option="customerTop5Option" style="height: 360px" autoresize />
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <!-- Row 5: Product TOP5 (full width) -->
     <el-row :gutter="16" style="margin-top: 16px;">
       <el-col :span="24">
-        <el-card>
+        <el-card class="chart-card">
           <template #header><span class="chart-title">本月产品销量TOP5</span></template>
           <v-chart :option="productTop5Option" style="height: 280px" autoresize />
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- Bottom Row: Alerts + Activities -->
+    <!-- Row 6: Bottom info (2 cols) -->
     <el-row :gutter="16" class="bottom-row">
       <el-col :xs="24" :sm="12">
-        <el-card v-if="data.alerts && data.alerts.length" class="alert-card">
-          <template #header><span class="chart-title" style="color:#F44336">⚠️ 库存预警 ({{ data.alerts.length }})</span></template>
+        <el-card v-if="data.alerts && data.alerts.length" class="section-card">
+          <template #header>
+            <div class="section-header">
+              <el-icon class="section-icon" style="color: #F44336"><Warning /></el-icon>
+              <span class="chart-title" style="color:#F44336">库存预警 ({{ data.alerts.length }})</span>
+            </div>
+          </template>
           <div v-for="a in data.alerts" :key="a.id" class="alert-item">
             <span class="alert-name">{{ a.name }}</span>
             <span class="alert-value">{{ a.current }} / {{ a.safety }} {{ a.unit }}</span>
@@ -119,11 +146,15 @@
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12">
-        <el-card class="activity-card">
-          <template #header><span class="chart-title">今日动态</span></template>
+        <el-card class="section-card">
+          <template #header>
+            <div class="section-header">
+              <el-icon class="section-icon" style="color: #E65100"><TrendCharts /></el-icon>
+              <span class="chart-title">今日动态</span>
+            </div>
+          </template>
           <div v-if="data.today_activities && data.today_activities.length">
             <div v-for="(act, idx) in data.today_activities" :key="idx" class="activity-item">
-              <span class="act-icon">{{ act.icon }}</span>
               <span class="act-time">{{ act.time }}</span>
               <el-tag size="small" :type="actTagType(act.type)" class="act-tag">{{ act.type }}</el-tag>
               <span class="act-desc">{{ act.desc }}</span>
@@ -143,10 +174,11 @@ import { use } from 'echarts/core'
 import { LineChart, BarChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, GridComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+import { Money, TrendCharts, Document, Warning, Box, OfficeBuilding, Search, Van, User } from '@element-plus/icons-vue'
 import KpiCard from './KpiCard.vue'
 import { getBossDashboardExtended, quickSearch } from '../api'
 
-use([LineChart, BarChart, TitleComponent, TooltipComponent, GridComponent, CanvasRenderer])
+use([LineChart, BarChart, TitleComponent, TooltipComponent, GridRenderer])
 
 const data = ref({
   month_sales: 0, last_month_sales: 0, month_change: 0,
@@ -173,35 +205,39 @@ async function doSearch() {
   } catch (e) {}
 }
 
+const chartBg = '#FFF3E0'
+const primaryColor = '#E65100'
+
 const salesTrendOption = computed(() => ({
-  tooltip: { trigger: 'axis' },
-  grid: { left: 60, right: 20, top: 20, bottom: 40 },
-  xAxis: { type: 'category', data: data.value.sales_trend.map(r => r.date.slice(5)), axisLabel: { fontSize: 12 } },
-  yAxis: { type: 'value', axisLabel: { fontSize: 12 } },
+  tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: primaryColor, borderWidth: 1 },
+  grid: { left: 64, right: 24, top: 24, bottom: 40 },
+  xAxis: { type: 'category', data: data.value.sales_trend.map(r => r.date.slice(5)), axisLabel: { fontSize: 12, color: '#757575' }, axisLine: { lineStyle: { color: '#E0E0E0' } } },
+  yAxis: { type: 'value', axisLabel: { fontSize: 12, color: '#757575' }, splitLine: { lineStyle: { color: '#F5F5F5' } } },
   series: [{
     type: 'line', smooth: true, data: data.value.sales_trend.map(r => r.amount),
-    areaStyle: { color: 'rgba(230,81,0,0.15)' },
-    lineStyle: { color: '#E65100', width: 3 },
-    itemStyle: { color: '#E65100' },
+    areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(230,81,0,0.25)' }, { offset: 1, color: 'rgba(230,81,0,0.02)' }] } },
+    lineStyle: { color: primaryColor, width: 3 },
+    itemStyle: { color: primaryColor },
+    symbolSize: 6,
   }],
 }))
 
 const customerTop5Option = computed(() => ({
-  tooltip: { trigger: 'axis' },
-  grid: { left: 100, right: 20, top: 20, bottom: 20 },
-  xAxis: { type: 'value' },
-  yAxis: { type: 'category', data: data.value.customer_top5.map(r => r.name).reverse(), axisLabel: { fontSize: 13 } },
+  tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: primaryColor, borderWidth: 1 },
+  grid: { left: 100, right: 24, top: 24, bottom: 24 },
+  xAxis: { type: 'value', axisLabel: { color: '#757575' }, splitLine: { lineStyle: { color: '#F5F5F5' } } },
+  yAxis: { type: 'category', data: data.value.customer_top5.map(r => r.name).reverse(), axisLabel: { fontSize: 13, color: '#212121' } },
   series: [{
     type: 'bar', data: data.value.customer_top5.map(r => r.amount).reverse(),
-    itemStyle: { color: '#E65100', borderRadius: [0, 6, 6, 0] }, barWidth: 22,
+    itemStyle: { color: primaryColor, borderRadius: [0, 6, 6, 0] }, barWidth: 22,
   }],
 }))
 
 const productTop5Option = computed(() => ({
-  tooltip: { trigger: 'axis' },
-  grid: { left: 120, right: 20, top: 20, bottom: 20 },
-  xAxis: { type: 'value' },
-  yAxis: { type: 'category', data: data.value.products_top5.map(r => r.name).reverse(), axisLabel: { fontSize: 13 } },
+  tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#FF8A50', borderWidth: 1 },
+  grid: { left: 120, right: 24, top: 24, bottom: 24 },
+  xAxis: { type: 'value', axisLabel: { color: '#757575' }, splitLine: { lineStyle: { color: '#F5F5F5' } } },
+  yAxis: { type: 'category', data: data.value.products_top5.map(r => r.name).reverse(), axisLabel: { fontSize: 13, color: '#212121' } },
   series: [{
     type: 'bar', data: data.value.products_top5.map(r => r.quantity).reverse(),
     itemStyle: { color: '#FF8A50', borderRadius: [0, 6, 6, 0] }, barWidth: 20,
@@ -221,42 +257,196 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page-title { font-size: 24px; font-weight: 700; color: var(--primary); margin-bottom: 20px; }
-.kpi-row { margin-bottom: 16px; }
-.kpi-row .el-col { margin-bottom: 12px; }
-.charts-row .el-col, .bottom-row .el-col { margin-bottom: 16px; }
-.chart-card, .alert-card, .activity-card { height: 100%; }
-.chart-title { font-size: 16px; font-weight: 600; }
+.boss-dashboard {
+  max-width: 1200px;
+}
 
-.kpi-with-change { position: relative; }
+.page-title {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 24px;
+}
+
+/* KPI rows */
+.kpi-row {
+  margin-bottom: 16px;
+}
+.kpi-row .el-col {
+  margin-bottom: 8px;
+}
+
+/* Change tag on month sales */
+.kpi-with-change {
+  position: relative;
+}
 .change-tag {
-  position: absolute; top: 8px; right: 8px;
-  font-size: 12px; font-weight: 700; padding: 2px 8px;
-  border-radius: 10px; background: #f5f5f5; color: #999;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #f5f5f5;
+  color: #999;
 }
-.change-tag.up { color: #4CAF50; background: #E8F5E9; }
-.change-tag.down { color: #F44336; background: #FFEBEE; }
+.change-tag.up {
+  color: #4CAF50;
+  background: #E8F5E9;
+}
+.change-tag.down {
+  color: #F44336;
+  background: #FFEBEE;
+}
 
-.kpi-wrap { position: relative; }
+/* Overdue hint */
+.kpi-wrap {
+  position: relative;
+}
 .overdue-hint {
-  position: absolute; top: 8px; right: 8px;
-  font-size: 12px; font-weight: 700; padding: 2px 8px;
-  border-radius: 10px; color: #D32F2F; background: #FFEBEE;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #D32F2F;
+  background: #FFEBEE;
 }
 
-.quick-search-card { height: 100%; }
-.quick-search-card :deep(.el-card__body) { padding: 16px; }
-.search-box { display: flex; align-items: center; }
+/* Quick search */
+.quick-search-card {
+  background: linear-gradient(135deg, #FFF3E0 0%, #FFFFFF 100%);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  min-height: 88px;
+  box-shadow: var(--shadow-sm);
+}
+.search-input {
+  flex: 1;
+}
+.search-input :deep(.el-input__wrapper) {
+  border-radius: 8px;
+}
+.search-btn {
+  flex-shrink: 0;
+}
 
-.alert-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 15px; }
-.alert-item:last-child { border-bottom: none; }
-.alert-name { font-weight: 600; color: #F44336; }
-.alert-value { color: #999; }
-.activity-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
-.activity-item:last-child { border-bottom: none; }
-.act-icon { font-size: 18px; }
-.act-time { color: #999; font-size: 13px; min-width: 44px; }
-.act-tag { flex-shrink: 0; }
-.act-desc { flex: 1; }
-.empty-text { color: #999; text-align: center; padding: 20px; font-size: 15px; }
+/* Pending row */
+.pending-row {
+  margin-bottom: 16px;
+}
+.pending-row .el-col {
+  margin-bottom: 8px;
+}
+.section-card {
+  height: 100%;
+}
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-icon {
+  font-size: 20px;
+}
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  flex: 1;
+}
+.pending-count {
+  font-family: 'Inter', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  padding: 16px 0;
+}
+
+/* Charts */
+.charts-row .el-col,
+.bottom-row .el-col {
+  margin-bottom: 16px;
+}
+.chart-card {
+  height: 100%;
+  background: #FFF3E0;
+}
+.chart-card :deep(.el-card__header) {
+  padding: 16px 20px 8px;
+  border-bottom: none;
+}
+.chart-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* Alerts */
+.alert-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #FFE0B2;
+  font-size: 15px;
+}
+.alert-item:last-child {
+  border-bottom: none;
+}
+.alert-name {
+  font-weight: 600;
+  color: #F44336;
+}
+.alert-value {
+  color: var(--text-secondary);
+}
+
+/* Activities */
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #FFE0B2;
+  font-size: 14px;
+}
+.activity-item:last-child {
+  border-bottom: none;
+}
+.act-time {
+  color: var(--text-secondary);
+  font-size: 13px;
+  min-width: 44px;
+  font-family: 'Inter', sans-serif;
+}
+.act-tag {
+  flex-shrink: 0;
+}
+.act-desc {
+  flex: 1;
+}
+
+/* Search results */
+.result-heading {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+
+.empty-text {
+  color: var(--text-light);
+  text-align: center;
+  padding: 20px;
+  font-size: 15px;
+}
 </style>

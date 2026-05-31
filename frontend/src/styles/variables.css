@@ -1,15 +1,29 @@
 :root {
+  /* Primary */
   --primary: #E65100;
   --primary-light: #FF8A50;
+  --primary-lighter: #FFCC80;
   --primary-dark: #BF360C;
-  --bg: #FFF3E0;
-  --bg-card: #FFFFFF;
-  --text: #3E2723;
-  --text-light: #6D4C41;
+  --primary-bg: #FFF3E0;
+
+  /* Accent */
   --success: #4CAF50;
   --warning: #FF9800;
   --danger: #F44336;
-  --border: #FFE0B2;
+  --info: #1976D2;
+
+  /* Neutral */
+  --bg: #F5F5F5;
+  --bg-card: #FFFFFF;
+  --text: #212121;
+  --text-secondary: #757575;
+  --text-light: #9E9E9E;
+  --border: #E0E0E0;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 24px rgba(230,81,0,0.15);
 }
 
 * {
@@ -19,12 +33,14 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 16px;
   color: var(--text);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
 
+/* Global Element Plus overrides */
 .el-button {
   min-height: 44px !important;
   font-size: 16px !important;
@@ -41,10 +57,16 @@ body {
   border-color: var(--primary-light) !important;
 }
 
+.el-button--primary:active {
+  background-color: var(--primary-dark) !important;
+  border-color: var(--primary-dark) !important;
+}
+
 .el-card {
   border-radius: 12px !important;
   border: none !important;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: box-shadow 0.3s ease, transform 0.3s ease !important;
 }
 
 .el-table {
