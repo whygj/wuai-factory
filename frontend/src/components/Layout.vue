@@ -115,8 +115,18 @@
       </div>
     </aside>
 
+    <!-- Mobile Top Bar (退出按钮始终可见) -->
+    <div class="mobile-topbar" v-if="isMobile">
+      <span class="topbar-title">五爱食品工厂</span>
+      <div class="topbar-actions">
+        <span class="topbar-user">{{ userDisplay }}</span>
+        <el-tag size="small" type="warning">{{ roleLabel }}</el-tag>
+        <el-button size="small" type="danger" plain @click="logout" style="margin-left:8px;">退出</el-button>
+      </div>
+    </div>
+
     <!-- Main Content -->
-    <main class="main-content">
+    <main class="main-content" :class="{ 'has-topbar': isMobile }">
       <router-view />
     </main>
 
@@ -325,6 +335,39 @@ onUnmounted(() => {
   min-height: 100vh;
 }
 
+/* Mobile Top Bar */
+.mobile-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  z-index: 200;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.topbar-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar-user {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
 @media (max-width: 768px) {
   .sidebar {
     display: none;
@@ -332,6 +375,7 @@ onUnmounted(() => {
   .main-content {
     margin-left: 0;
     padding: 16px;
+    padding-top: 60px;
     padding-bottom: 80px;
   }
 }

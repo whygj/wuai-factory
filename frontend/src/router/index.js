@@ -40,6 +40,15 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
+  // 强制退出：访问 /login?force=1 清除所有登录状态
+  if (to.path === '/login' && to.query.force === '1') {
+    localStorage.removeItem('displayName')
+    localStorage.removeItem('roles')
+    localStorage.removeItem('currentRole')
+    document.cookie = 'access_token=; path=/; max-age=0'
+    next('/login')
+    return
+  }
   const loggedIn = localStorage.getItem('displayName')
   if (to.path !== '/login' && to.path !== '/select-role' && !loggedIn) {
     next('/login')
