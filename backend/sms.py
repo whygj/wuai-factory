@@ -88,11 +88,12 @@ def verify_code(phone: str, code: str) -> dict:
         del _code_store[phone]
         return {"ok": False, "msg": "验证次数过多，请重新获取"}
 
-    if cached["code"]:
-        if cached["code"] != code:
+    stored_code = cached.get("code")
+    if stored_code:
+        if stored_code != code:
             cached["attempts"] += 1
             return {"ok": False, "msg": "验证码错误"}
-    else:
+    elif not cached.get("dev_mode", False):
         try:
             from alibabacloud_dypnsapi20170525.client import Client
             from alibabacloud_openapi_client import OpenApiClient
@@ -119,7 +120,7 @@ def verify_code(phone: str, code: str) -> dict:
             return {"ok": False, "msg": "验证失败"}
 
     cached["verified"] = True
-    del cached["code"]
+    cached.pop("code", None)
     return {"ok": True, "msg": "验证成功"}
 
 
