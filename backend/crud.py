@@ -1197,3 +1197,175 @@ def get_inventory_report(db: Session):
         "alert_count": len(alert_materials),
         "total_material_value": sum(m.current_stock * (m.purchase_price or 0) for m in materials),
     }
+
+
+def get_boss_dashboard_extended(db: Session):
+    today = date.today()
+    month_start = today.replace(day=1)
+    last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+
+    # 本月销售额
+    month_sales = db.query(func.coalesce(func.sum(SalesOrder.total_amount), 0)).filter(
+        SalesOrder.date >= month_start,
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    # 上月销售额
+    last_month_sales = db.query(func.coalesce(func.sum(SalesOrder.total_amount), 0)).filter(
+        SalesOrder.date >= last_month_start,
+        SalesOrder.date < month_start,
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    # 今日销售额
+    today_sales = db.query(func.coalesce(func.sum(SalesOrder.total_amount), 0)).filter(
+        SalesOrder.date == today,
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    # 应收款
+    receivables_total = db.query(func.coalesce(func.sum(SalesOrder.total_amount - SalesOrder.paid_amount), 0)).filter(
+        SalesOrder.payment_status != "已付款",
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    # 逾期应收款（超过30天未付）
+    overdue_date = today - timedelta(days=30)
+    receivables_overdue = db.query(func.coalesce(func.sum(SalesOrder.total_amount - SalesOrder.paid_amount), 0)).filter(
+        SalesOrder.payment_status != "已付款",
+        SalesOrder.status != "已取消",
+        SalesOrder.date < overdue_date,
+    ).scalar()
+
+    # 库存预警
+    alert_count = db.query(func.count(RawMaterial.id)).filter(
+        RawMaterial.current_stock <= RawMaterial.safety_stock,
+        RawMaterial.safety_stock > 0,
+    ).scalar()
+
+    alerts = db.query(RawMaterial).filter(
+        RawMaterial.current_stock <= RawMaterial.safety_stock,
+        RawMaterial.safety_stock > 0,
+    ).all()
+
+    # 待审核用户
+    pending_users = db.query(func.count(User.id)).filter(User.status == "pending").scalar()
+
+    # 待发货订单数
+    shipments_pending = db.query(func.count(SalesOrder.id)).filter(SalesOrder.status == "待发货").scalar()
+
+    # 今日产量
+    today_production = db.query(func.coalesce(func.sum(ProductionRecord.quantity), 0)).filter(
+        ProductionRecord.date == today
+    ).scalar()
+
+    # 客户活跃度TOP5（最近30天交易次数）
+    active30 = today - timedelta(days=30)
+    customers_active = db.query(
+        Customer.name, func.count(SalesOrder.id).label('order_count')
+    ).join(SalesOrder).filter(
+        SalesOrder.date >= active30,
+        SalesOrder.status != "已取消",
+    ).group_by(Customer.id).order_by(func.count(SalesOrder.id).desc()).limit(5).all()
+
+    # 产品销量TOP5（本月）
+    products_top5_rows = []
+    try:
+        orders = db.query(SalesOrder).filter(
+            SalesOrder.date >= month_start,
+            SalesOrder.status != "已取消",
+        ).all()
+        product_sales = {}
+        for o in orders:
+            items = json.loads(o.items) if o.items else []
+            for it in items:
+                name = it.get("product_name", "")
+                qty = it.get("quantity", 0)
+                product_sales[name] = product_sales.get(name, 0) + qty
+        sorted_products = sorted(product_sales.items(), key=lambda x: x[1], reverse=True)[:5]
+        products_top5_rows = sorted_products
+    except Exception:
+        pass
+
+    # 销售趋势（近30天）
+    trend_start = today - timedelta(days=29)
+    sales_trend = db.query(
+        SalesOrder.date, func.coalesce(func.sum(SalesOrder.total_amount), 0)
+    ).filter(
+        SalesOrder.date >= trend_start,
+        SalesOrder.status != "已取消",
+    ).group_by(SalesOrder.date).all()
+
+    # 客户TOP5（本月消费金额）
+    customer_top5 = db.query(
+        Customer.name, func.sum(SalesOrder.total_amount).label('amount')
+    ).join(SalesOrder).filter(
+        SalesOrder.date >= month_start,
+        SalesOrder.status != "已取消",
+    ).group_by(Customer.id).order_by(func.sum(SalesOrder.total_amount).desc()).limit(5).all()
+
+    # 今日动态
+    activities = []
+    for po in db.query(PurchaseOrder).filter(PurchaseOrder.date == today).all():
+        activities.append({"time": po.created_at.strftime("%H:%M") if po.created_at else "", "type": "采购入库", "desc": f"采购单 {po.order_no}", "icon": "📦"})
+    for pr in db.query(ProductionRecord).filter(ProductionRecord.date == today).all():
+        pname = pr.product.name if pr.product else ""
+        activities.append({"time": pr.created_at.strftime("%H:%M") if pr.created_at else "", "type": "生产", "desc": f"生产 {pname} {pr.quantity}{pr.unit or ''}", "icon": "🏭"})
+    for so in db.query(SalesOrder).filter(SalesOrder.date == today).all():
+        cname = so.customer.name if so.customer else ""
+        activities.append({"time": so.created_at.strftime("%H:%M") if so.created_at else "", "type": "销售", "desc": f"订单 {so.order_no} → {cname} [{so.status}]", "icon": "🚚"})
+    activities.sort(key=lambda x: x["time"], reverse=True)
+
+    # 环比变化
+    month_change = 0
+    if last_month_sales > 0:
+        month_change = round((month_sales - last_month_sales) / last_month_sales * 100, 1)
+
+    return {
+        "month_sales": month_sales,
+        "last_month_sales": last_month_sales,
+        "month_change": month_change,
+        "today_sales": today_sales,
+        "receivables_total": receivables_total,
+        "receivables_overdue": receivables_overdue,
+        "alert_count": alert_count,
+        "alerts": [{"id": a.id, "name": a.name, "current": a.current_stock, "safety": a.safety_stock, "unit": a.unit} for a in alerts],
+        "pending_users": pending_users,
+        "shipments_pending": shipments_pending,
+        "today_production": today_production,
+        "customers_active": [{"name": r[0], "count": r[1]} for r in customers_active],
+        "products_top5": [{"name": r[0], "quantity": r[1]} for r in products_top5_rows],
+        "customer_top5": [{"name": r[0], "amount": r[1]} for r in customer_top5],
+        "sales_trend": [{"date": r[0].strftime("%Y-%m-%d") if hasattr(r[0], 'strftime') else str(r[0]), "amount": r[1]} for r in sales_trend],
+        "today_activities": activities,
+    }
+
+
+def quick_search(db: Session, keyword: str):
+    results = {"customers": [], "orders": [], "products": [], "suppliers": []}
+    if not keyword or len(keyword) < 1:
+        return results
+
+    like = f"%{keyword}%"
+
+    customers = db.query(Customer).filter(
+        (Customer.name.ilike(like)) | (Customer.phone.ilike(like)) | (Customer.contact.ilike(like))
+    ).limit(10).all()
+    results["customers"] = [{"id": c.id, "name": c.name, "phone": c.phone, "type": c.type} for c in customers]
+
+    orders = db.query(SalesOrder).filter(
+        (SalesOrder.order_no.ilike(like))
+    ).limit(10).all()
+    results["orders"] = [{"id": o.id, "order_no": o.order_no, "customer_name": o.customer.name if o.customer else "", "total_amount": o.total_amount, "status": o.status, "date": str(o.date)} for o in orders]
+
+    products = db.query(Product).filter(
+        (Product.name.ilike(like)) | (Product.category.ilike(like))
+    ).limit(10).all()
+    results["products"] = [{"id": p.id, "name": p.name, "category": p.category, "stock": p.current_stock, "unit": p.unit} for p in products]
+
+    suppliers = db.query(Supplier).filter(
+        (Supplier.name.ilike(like)) | (Supplier.phone.ilike(like)) | (Supplier.contact.ilike(like))
+    ).limit(10).all()
+    results["suppliers"] = [{"id": s.id, "name": s.name, "phone": s.phone, "category": s.category} for s in suppliers]
+
+    return results

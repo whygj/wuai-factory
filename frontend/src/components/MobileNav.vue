@@ -40,6 +40,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { logoutApi } from '../api'
 
 const router = useRouter()
 const showMore = ref(false)
@@ -57,7 +58,7 @@ function switchRole() {
 
 function logout() {
   showMore.value = false
-  localStorage.removeItem('token')
+  logoutApi().catch(() => {})
   localStorage.removeItem('displayName')
   localStorage.removeItem('currentRole')
   localStorage.removeItem('userRoles')

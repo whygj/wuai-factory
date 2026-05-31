@@ -47,7 +47,6 @@ async function selectRole(role) {
   loading.value = true
   try {
     const res = await selectRoleApi({ role })
-    localStorage.setItem('token', res.access_token)
     localStorage.setItem('currentRole', role)
     localStorage.setItem('displayName', res.display_name)
     ElMessage.success('已切换角色')

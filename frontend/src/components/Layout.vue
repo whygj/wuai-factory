@@ -6,43 +6,102 @@
         <h2>五爱食品工厂</h2>
       </div>
       <nav class="sidebar-nav">
-        <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
-          <span class="nav-icon">📊</span><span>仪表盘</span>
-        </router-link>
-        <router-link to="/customers" class="nav-item" :class="{ active: $route.path === '/customers' }">
-          <span class="nav-icon">👥</span><span>客户管理</span>
-        </router-link>
-        <router-link to="/suppliers" class="nav-item" :class="{ active: $route.path === '/suppliers' }">
-          <span class="nav-icon">🏭</span><span>供应商</span>
-        </router-link>
-        <router-link to="/purchases" class="nav-item" :class="{ active: $route.path === '/purchases' }">
-          <span class="nav-icon">📦</span><span>采购管理</span>
-        </router-link>
-        <router-link to="/materials" class="nav-item" :class="{ active: $route.path === '/materials' }">
-          <span class="nav-icon">🧈</span><span>原料库存</span>
-        </router-link>
-        <router-link to="/products" class="nav-item" :class="{ active: $route.path === '/products' }">
-          <span class="nav-icon">📦</span><span>产品库存</span>
-        </router-link>
-        <router-link to="/production/new" class="nav-item" :class="{ active: $route.path.includes('/production') }">
-          <span class="nav-icon">⚙️</span><span>生产管理</span>
-        </router-link>
-        <router-link to="/lab" class="nav-item" :class="{ active: $route.path === '/lab' }">
-          <span class="nav-icon">🔬</span><span>试验室</span>
-        </router-link>
-        <router-link to="/sales-orders" class="nav-item" :class="{ active: $route.path === '/sales-orders' }">
-          <span class="nav-icon">🚚</span><span>销售发货</span>
-        </router-link>
-        <router-link to="/receivables" class="nav-item" :class="{ active: $route.path === '/receivables' }">
-          <span class="nav-icon">💰</span><span>应收款</span>
-        </router-link>
-        <router-link to="/reports" class="nav-item" :class="{ active: $route.path === '/reports' }">
-          <span class="nav-icon">📊</span><span>经营报表</span>
-        </router-link>
-        <router-link v-if="currentRole === 'boss'" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
-          <span class="nav-icon">👥</span><span>用户管理</span>
-          <span v-if="pendingCount > 0" class="nav-badge">{{ pendingCount }}</span>
-        </router-link>
+        <!-- 经营分析 -->
+        <div class="nav-group">
+          <div class="nav-group-title" @click="toggleGroup('overview')">
+            <span>📊 经营分析</span>
+            <span class="nav-arrow" :class="{ open: expandedGroups.overview }">›</span>
+          </div>
+          <div class="nav-group-items" v-show="expandedGroups.overview">
+            <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
+              <span>仪表盘</span>
+            </router-link>
+            <router-link to="/reports" class="nav-item" :class="{ active: $route.path === '/reports' }">
+              <span>经营报表</span>
+            </router-link>
+          </div>
+        </div>
+
+        <!-- 客户供应商 -->
+        <div class="nav-group">
+          <div class="nav-group-title" @click="toggleGroup('trade')">
+            <span>👥 客户供应商</span>
+            <span class="nav-arrow" :class="{ open: expandedGroups.trade }">›</span>
+          </div>
+          <div class="nav-group-items" v-show="expandedGroups.trade">
+            <router-link to="/customers" class="nav-item" :class="{ active: $route.path === '/customers' }">
+              <span>客户管理</span>
+            </router-link>
+            <router-link to="/suppliers" class="nav-item" :class="{ active: $route.path === '/suppliers' }">
+              <span>供应商</span>
+            </router-link>
+          </div>
+        </div>
+
+        <!-- 采购库存 -->
+        <div class="nav-group">
+          <div class="nav-group-title" @click="toggleGroup('stock')">
+            <span>📦 采购库存</span>
+            <span class="nav-arrow" :class="{ open: expandedGroups.stock }">›</span>
+          </div>
+          <div class="nav-group-items" v-show="expandedGroups.stock">
+            <router-link to="/purchases" class="nav-item" :class="{ active: $route.path === '/purchases' }">
+              <span>采购管理</span>
+            </router-link>
+            <router-link to="/materials" class="nav-item" :class="{ active: $route.path === '/materials' }">
+              <span>原料库存</span>
+            </router-link>
+            <router-link to="/products" class="nav-item" :class="{ active: $route.path === '/products' }">
+              <span>产品库存</span>
+            </router-link>
+          </div>
+        </div>
+
+        <!-- 生产质量 -->
+        <div class="nav-group">
+          <div class="nav-group-title" @click="toggleGroup('prod')">
+            <span>🏭 生产质量</span>
+            <span class="nav-arrow" :class="{ open: expandedGroups.prod }">›</span>
+          </div>
+          <div class="nav-group-items" v-show="expandedGroups.prod">
+            <router-link to="/production/new" class="nav-item" :class="{ active: $route.path.includes('/production') }">
+              <span>生产管理</span>
+            </router-link>
+            <router-link to="/lab" class="nav-item" :class="{ active: $route.path === '/lab' }">
+              <span>试验室</span>
+            </router-link>
+          </div>
+        </div>
+
+        <!-- 销售财务 -->
+        <div class="nav-group">
+          <div class="nav-group-title" @click="toggleGroup('sales')">
+            <span>🚚 销售财务</span>
+            <span class="nav-arrow" :class="{ open: expandedGroups.sales }">›</span>
+          </div>
+          <div class="nav-group-items" v-show="expandedGroups.sales">
+            <router-link to="/sales-orders" class="nav-item" :class="{ active: $route.path === '/sales-orders' }">
+              <span>销售发货</span>
+            </router-link>
+            <router-link to="/receivables" class="nav-item" :class="{ active: $route.path === '/receivables' }">
+              <span>应收款</span>
+            </router-link>
+          </div>
+        </div>
+
+        <!-- 系统管理 -->
+        <div class="nav-group" v-if="currentRole === 'boss'">
+          <div class="nav-group-title" @click="toggleGroup('system')">
+            <span>⚙️ 系统管理</span>
+            <span class="nav-arrow" :class="{ open: expandedGroups.system }">›</span>
+          </div>
+          <div class="nav-group-items" v-show="expandedGroups.system">
+            <router-link to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
+              <span>用户管理</span>
+              <span v-if="pendingCount > 0" class="nav-badge">{{ pendingCount }}</span>
+            </router-link>
+          </div>
+        </div>
       </nav>
       <div class="sidebar-footer">
         <div class="user-info">
@@ -67,10 +126,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import MobileNav from './MobileNav.vue'
-import { getPendingUsersApi } from '../api'
+import { getPendingUsersApi, logoutApi } from '../api'
 
 const router = useRouter()
 const isMobile = ref(false)
@@ -82,6 +141,19 @@ const hasMultipleRoles = computed(() => userRoles.value.length > 1)
 
 const roleLabels = { boss: '老板', clerk: '内勤', leader: '班长' }
 const roleLabel = computed(() => roleLabels[currentRole.value] || currentRole.value)
+
+const expandedGroups = reactive({
+  overview: true,
+  trade: true,
+  stock: true,
+  prod: true,
+  sales: true,
+  system: true,
+})
+
+function toggleGroup(group) {
+  expandedGroups[group] = !expandedGroups[group]
+}
 
 function checkMobile() {
   isMobile.value = window.innerWidth <= 768
@@ -99,7 +171,7 @@ async function loadPendingCount() {
 }
 
 function logout() {
-  localStorage.removeItem('token')
+  logoutApi().catch(() => {})
   localStorage.removeItem('displayName')
   localStorage.removeItem('currentRole')
   localStorage.removeItem('userRoles')
@@ -151,18 +223,53 @@ onUnmounted(() => {
 
 .sidebar-nav {
   flex: 1;
-  padding: 12px 0;
+  padding: 8px 0;
   overflow-y: auto;
+}
+
+.nav-group {
+  margin-bottom: 2px;
+}
+
+.nav-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.95);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.nav-group-title:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.nav-arrow {
+  font-size: 18px;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.nav-arrow.open {
+  transform: rotate(90deg);
+}
+
+.nav-group-items {
+  padding: 0;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 24px;
-  color: rgba(255,255,255,0.8);
+  gap: 8px;
+  padding: 10px 20px 10px 32px;
+  color: rgba(255,255,255,0.7);
   text-decoration: none;
-  font-size: 16px;
+  font-size: 14px;
   transition: all 0.2s;
 }
 
@@ -170,10 +277,6 @@ onUnmounted(() => {
 .nav-item.active {
   background: rgba(255,255,255,0.15);
   color: white;
-}
-
-.nav-icon {
-  font-size: 20px;
 }
 
 .nav-badge {

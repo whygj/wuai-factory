@@ -5,14 +5,7 @@ import router from '../router'
 const api = axios.create({
   baseURL: '/api',
   timeout: 10000,
-})
-
-api.interceptors.request.use(config => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
+  withCredentials: true,
 })
 
 api.interceptors.response.use(
@@ -20,7 +13,6 @@ api.interceptors.response.use(
   error => {
     const msg = error.response?.data?.detail || '请求失败'
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
       router.push('/login')
     }
     ElMessage.error(msg)
@@ -35,6 +27,7 @@ export const register = (data) => api.post('/auth/register', data)
 export const selectRoleApi = (data) => api.post('/auth/select-role', data)
 export const getRoles = () => api.get('/auth/roles')
 export const getMe = () => api.get('/auth/me')
+export const logoutApi = () => api.post('/auth/logout')
 
 // User Management
 export const getPendingUsersApi = () => api.get('/users/pending')
@@ -45,6 +38,7 @@ export const rejectUserApi = (id) => api.post(`/users/${id}/reject`)
 // Dashboard
 export const getDashboard = () => api.get('/dashboard/overview')
 export const getBossDashboard = () => api.get('/dashboard/boss')
+export const getBossDashboardExtended = () => api.get('/dashboard/boss-extended')
 export const getClerkDashboard = () => api.get('/dashboard/clerk')
 export const getLeaderDashboard = () => api.get('/dashboard/leader')
 
@@ -118,6 +112,9 @@ export const updateLabRecord = (id, data) => api.put(`/lab/${id}`, data)
 export const getSalesReport = (params) => api.get('/reports/sales', { params })
 export const getProductionReport = (params) => api.get('/reports/production', { params })
 export const getInventoryReport = () => api.get('/reports/inventory')
+
+// Quick Search
+export const quickSearch = (params) => api.get('/quick-search', { params })
 
 // Permission helper
 export function canEdit(module) {

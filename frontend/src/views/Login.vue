@@ -133,7 +133,6 @@ async function handleLogin() {
   loading.value = true
   try {
     const res = await loginWithCode({ phone: phone.value, code: code.value })
-    localStorage.setItem('token', res.access_token)
     localStorage.setItem('displayName', res.display_name)
     localStorage.setItem('userRoles', JSON.stringify(res.roles))
     ElMessage.success('登录成功')

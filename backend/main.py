@@ -1,5 +1,5 @@
 import json
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database import get_db, init_db
@@ -17,7 +17,7 @@ app = FastAPI(title="五爱食品工厂管理系统", version="2.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://factory.agentmj.vip"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,7 +43,7 @@ def send_code(req: schemas.SendCodeRequest):
 
 
 @app.post("/api/auth/login", response_model=schemas.TokenResponse)
-def login(req: schemas.LoginRequest, db: Session = Depends(get_db)):
+def login(req: schemas.LoginRequest, response: Response, db: Session = Depends(get_db)):
     v = sms.verify_code(req.phone, req.code)
     if not v["ok"]:
         raise HTTPException(status_code=401, detail=v["msg"])
@@ -64,6 +64,16 @@ def login(req: schemas.LoginRequest, db: Session = Depends(get_db)):
         "sub": user.phone,
         "current_role": current_role,
     })
+
+    response.set_cookie(
+        "access_token",
+        token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=24 * 60 * 60,
+    )
+
     return {
         "access_token": token,
         "roles": roles,
@@ -101,6 +111,7 @@ def get_roles(current_user: User = Depends(get_current_user)):
 @app.post("/api/auth/select-role", response_model=schemas.TokenResponse)
 def select_role(
     req: schemas.RoleSelectRequest,
+    response: Response,
     current_user: User = Depends(get_current_user),
 ):
     roles = json.loads(current_user.roles)
@@ -111,6 +122,16 @@ def select_role(
         "sub": current_user.phone,
         "current_role": req.role,
     })
+
+    response.set_cookie(
+        "access_token",
+        token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=24 * 60 * 60,
+    )
+
     return {
         "access_token": token,
         "roles": roles,
@@ -128,6 +149,12 @@ def get_me(current_user: User = Depends(get_current_user)):
         "roles": roles,
         "status": current_user.status,
     }
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token")
+    return {"ok": True}
 
 
 # ==================== User Management ====================
@@ -218,6 +245,22 @@ def clerk_dashboard(current_user: User = Depends(get_current_user), db: Session 
 @app.get("/api/dashboard/leader")
 def leader_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return crud.get_leader_dashboard(db)
+
+
+@app.get("/api/dashboard/boss-extended")
+def boss_dashboard_extended(current_user: User = Depends(get_current_user), current_role: str = Depends(get_current_role), db: Session = Depends(get_db)):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="无权限")
+    return crud.get_boss_dashboard_extended(db)
+
+
+@app.get("/api/quick-search")
+def quick_search_api(
+    keyword: str = Query(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.quick_search(db, keyword)
 
 
 # ==================== Materials ====================
