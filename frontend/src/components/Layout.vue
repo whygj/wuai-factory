@@ -20,15 +20,27 @@
         </router-link>
         <router-link to="/materials" class="nav-item" :class="{ active: $route.path === '/materials' }">
           <span class="nav-icon">🧈</span>
-          <span>原料管理</span>
+          <span>原料库存</span>
+        </router-link>
+        <router-link to="/purchases" class="nav-item" :class="{ active: $route.path === '/purchases' }">
+          <span class="nav-icon">📦</span>
+          <span>采购管理</span>
         </router-link>
         <router-link to="/production/new" class="nav-item" :class="{ active: $route.path.includes('/production') }">
           <span class="nav-icon">⚙️</span>
           <span>生产管理</span>
         </router-link>
-        <router-link to="/shipments/new" class="nav-item" :class="{ active: $route.path.includes('/shipments') }">
+        <router-link to="/sales-orders" class="nav-item" :class="{ active: $route.path === '/sales-orders' }">
           <span class="nav-icon">🚚</span>
           <span>销售发货</span>
+        </router-link>
+        <router-link to="/shipments/new" class="nav-item" :class="{ active: $route.path.includes('/shipments') }">
+          <span class="nav-icon">📋</span>
+          <span>直接发货</span>
+        </router-link>
+        <router-link to="/receivables" class="nav-item" :class="{ active: $route.path === '/receivables' }">
+          <span class="nav-icon">💰</span>
+          <span>应收款</span>
         </router-link>
       </nav>
       <div class="sidebar-footer">

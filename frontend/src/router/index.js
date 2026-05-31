@@ -23,6 +23,9 @@ const routes = [
       { path: 'production/new', name: 'ProductionNew', component: () => import('../views/ProductionNew.vue') },
       { path: 'shipments', name: 'Shipments', component: () => import('../views/ShipmentList.vue') },
       { path: 'shipments/new', name: 'ShipmentNew', component: () => import('../views/ShipmentNew.vue') },
+      { path: 'sales-orders', name: 'SalesOrders', component: () => import('../views/SalesOrders.vue') },
+      { path: 'purchases', name: 'Purchases', component: () => import('../views/Purchases.vue') },
+      { path: 'receivables', name: 'Receivables', component: () => import('../views/Receivables.vue') },
     ],
   },
 ]

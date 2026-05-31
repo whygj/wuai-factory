@@ -454,3 +454,216 @@ def production_trend(
     db: Session = Depends(get_db),
 ):
     return crud.get_production_trend(db, days=days)
+
+
+# ==================== Sales Orders ====================
+
+@app.get("/api/sales-orders")
+def list_sales_orders(
+    customer_id: int = Query(0),
+    status: str = Query(""),
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    page: int = Query(1),
+    page_size: int = Query(50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_sales_orders(db, customer_id=customer_id, status=status,
+                                 start_date=start_date, end_date=end_date,
+                                 page=page, page_size=page_size)
+
+
+@app.post("/api/sales-orders")
+def create_sales_order(
+    data: schemas.SalesOrderCreate,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if not check_write_permission(current_role, "sales"):
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        order = crud.create_sales_order(db, data, current_user.username)
+        return crud.get_sales_order(db, order.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/sales-orders/stats")
+def sales_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_sales_stats(db)
+
+
+@app.get("/api/sales-orders/{order_id}")
+def get_sales_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    order = crud.get_sales_order(db, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    return order
+
+
+@app.put("/api/sales-orders/{order_id}/status")
+def update_sales_order_status(
+    order_id: int,
+    data: schemas.SalesOrderStatusUpdate,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if not check_write_permission(current_role, "sales"):
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        order = crud.update_sales_order_status(db, order_id, data, current_user.username)
+        return {"id": order.id, "status": order.status}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/sales-orders/{order_id}/ship")
+def ship_sales_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if not check_write_permission(current_role, "sales"):
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        order = crud.ship_sales_order(db, order_id, current_user.username)
+        return {"id": order.id, "status": order.status}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/sales-orders/{order_id}/payment")
+def record_payment(
+    order_id: int,
+    data: schemas.PaymentRequest,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if not check_write_permission(current_role, "sales"):
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        order = crud.record_payment(db, order_id, data, current_user.username)
+        return {"id": order.id, "payment_status": order.payment_status, "paid_amount": order.paid_amount}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ==================== Purchase Orders ====================
+
+@app.get("/api/purchases")
+def list_purchases(
+    supplier_id: int = Query(0),
+    status: str = Query(""),
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    page: int = Query(1),
+    page_size: int = Query(50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_purchase_orders(db, supplier_id=supplier_id, status=status,
+                                    start_date=start_date, end_date=end_date,
+                                    page=page, page_size=page_size)
+
+
+@app.post("/api/purchases")
+def create_purchase(
+    data: schemas.PurchaseOrderCreate,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if not check_write_permission(current_role, "purchase"):
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        order = crud.create_purchase_order(db, data, current_user.username)
+        return crud.get_purchase_order(db, order.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/purchases/{order_id}")
+def get_purchase_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    order = crud.get_purchase_order(db, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="采购单不存在")
+    return order
+
+
+@app.put("/api/purchases/{order_id}/status")
+def update_purchase_status(
+    order_id: int,
+    data: schemas.PurchaseStatusUpdate,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if not check_write_permission(current_role, "purchase"):
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        order = crud.update_purchase_status(db, order_id, data, current_user.username)
+        return {"id": order.id, "status": order.status}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/purchases/{order_id}/inbound")
+def confirm_purchase_inbound(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if not check_write_permission(current_role, "purchase"):
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        order = crud.confirm_inbound(db, order_id, current_user.username)
+        return {"id": order.id, "status": order.status}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ==================== Receivables ====================
+
+@app.get("/api/receivables")
+def list_receivables(
+    page: int = Query(1),
+    page_size: int = Query(50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_receivables(db, page=page, page_size=page_size)
+
+
+@app.get("/api/receivables/overdue")
+def list_overdue_receivables(
+    page: int = Query(1),
+    page_size: int = Query(50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_overdue_receivables(db, page=page, page_size=page_size)
+
+
+@app.get("/api/receivables/summary")
+def receivables_summary(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_receivables_summary(db)

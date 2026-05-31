@@ -140,3 +140,39 @@ class Supplier(Base):
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SalesOrder(Base):
+    __tablename__ = "sales_orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_no = Column(Text, unique=True)
+    date = Column(Date, nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"))
+    items = Column(Text)
+    total_amount = Column(REAL, default=0)
+    status = Column(Text, default="待发货")
+    payment_status = Column(Text, default="未付款")
+    paid_amount = Column(REAL, default=0)
+    operator = Column(Text)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    customer = relationship("Customer")
+
+
+class PurchaseOrder(Base):
+    __tablename__ = "purchase_orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_no = Column(Text, unique=True)
+    date = Column(Date, nullable=False)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"))
+    items = Column(Text)
+    total_amount = Column(REAL, default=0)
+    status = Column(Text, default="待到货")
+    operator = Column(Text)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    supplier = relationship("Supplier")

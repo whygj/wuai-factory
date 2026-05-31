@@ -72,6 +72,27 @@ export const createSupplier = (data) => api.post('/suppliers', data)
 export const updateSupplier = (id, data) => api.put(`/suppliers/${id}`, data)
 export const deleteSupplier = (id) => api.delete(`/suppliers/${id}`)
 
+// Sales Orders
+export const getSalesOrders = (params) => api.get('/sales-orders', { params })
+export const createSalesOrder = (data) => api.post('/sales-orders', data)
+export const getSalesOrder = (id) => api.get(`/sales-orders/${id}`)
+export const updateSalesOrderStatus = (id, data) => api.put(`/sales-orders/${id}/status`, data)
+export const shipSalesOrder = (id) => api.put(`/sales-orders/${id}/ship`)
+export const recordPayment = (id, data) => api.put(`/sales-orders/${id}/payment`, data)
+export const getSalesStats = () => api.get('/sales-orders/stats')
+
+// Purchases
+export const getPurchases = (params) => api.get('/purchases', { params })
+export const createPurchase = (data) => api.post('/purchases', data)
+export const getPurchase = (id) => api.get(`/purchases/${id}`)
+export const updatePurchaseStatus = (id, data) => api.put(`/purchases/${id}/status`, data)
+export const confirmInbound = (id) => api.put(`/purchases/${id}/inbound`)
+
+// Receivables
+export const getReceivables = (params) => api.get('/receivables', { params })
+export const getOverdueReceivables = (params) => api.get('/receivables/overdue', { params })
+export const getReceivablesSummary = () => api.get('/receivables/summary')
+
 // Stats
 export const getMaterialDistribution = () => api.get('/stats/material-distribution')
 export const getProductRanking = () => api.get('/stats/product-ranking')

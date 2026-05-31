@@ -4,21 +4,21 @@
       <span class="tab-icon">📊</span>
       <span class="tab-label">首页</span>
     </router-link>
-    <router-link to="/customers" class="tab-item" :class="{ active: $route.path === '/customers' }">
-      <span class="tab-icon">👥</span>
-      <span class="tab-label">客户</span>
-    </router-link>
-    <router-link to="/suppliers" class="tab-item" :class="{ active: $route.path === '/suppliers' }">
-      <span class="tab-icon">🏭</span>
-      <span class="tab-label">供应商</span>
+    <router-link to="/purchases" class="tab-item" :class="{ active: $route.path === '/purchases' }">
+      <span class="tab-icon">📦</span>
+      <span class="tab-label">采购</span>
     </router-link>
     <router-link to="/production/new" class="tab-item" :class="{ active: $route.path.includes('/production') }">
       <span class="tab-icon">⚙️</span>
       <span class="tab-label">生产</span>
     </router-link>
-    <router-link to="/shipments/new" class="tab-item" :class="{ active: $route.path.includes('/shipments') }">
+    <router-link to="/sales-orders" class="tab-item" :class="{ active: $route.path === '/sales-orders' }">
       <span class="tab-icon">🚚</span>
-      <span class="tab-label">发货</span>
+      <span class="tab-label">销售</span>
+    </router-link>
+    <router-link to="/receivables" class="tab-item" :class="{ active: $route.path === '/receivables' }">
+      <span class="tab-icon">💰</span>
+      <span class="tab-label">应收</span>
     </router-link>
   </nav>
 </template>

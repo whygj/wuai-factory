@@ -280,6 +280,82 @@ class DashboardOverview(BaseModel):
     alerts: List[dict]
 
 
+# Sales Order
+class OrderItem(BaseModel):
+    product_id: int
+    quantity: float
+    unit_price: float = 0
+
+
+class SalesOrderCreate(BaseModel):
+    date: date
+    customer_id: int
+    items: List[OrderItem]
+    notes: Optional[str] = None
+
+
+class SalesOrderStatusUpdate(BaseModel):
+    status: str
+
+
+class PaymentRequest(BaseModel):
+    paid_amount: float
+
+
+class SalesOrderResponse(BaseModel):
+    id: int
+    order_no: Optional[str] = None
+    date: date
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    items: Optional[str] = None
+    total_amount: float = 0
+    status: str = "待发货"
+    payment_status: str = "未付款"
+    paid_amount: float = 0
+    operator: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Purchase Order
+class PurchaseItem(BaseModel):
+    material_id: int
+    quantity: float
+    unit_price: float = 0
+
+
+class PurchaseOrderCreate(BaseModel):
+    date: date
+    supplier_id: int
+    items: List[PurchaseItem]
+    notes: Optional[str] = None
+
+
+class PurchaseOrderResponse(BaseModel):
+    id: int
+    order_no: Optional[str] = None
+    date: date
+    supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
+    items: Optional[str] = None
+    total_amount: float = 0
+    status: str = "待到货"
+    operator: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PurchaseStatusUpdate(BaseModel):
+    status: str
+
+
 # Stats
 class MaterialDistribution(BaseModel):
     name: str
