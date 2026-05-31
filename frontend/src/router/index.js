@@ -19,6 +19,7 @@ const routes = [
       { path: 'customers', name: 'Customers', component: () => import('../views/Customers.vue') },
       { path: 'suppliers', name: 'Suppliers', component: () => import('../views/Suppliers.vue') },
       { path: 'materials', name: 'Materials', component: () => import('../views/Materials.vue') },
+      { path: 'products', name: 'Products', component: () => import('../views/Products.vue') },
       { path: 'production', name: 'ProductionList', component: () => import('../views/ProductionList.vue') },
       { path: 'production/new', name: 'ProductionNew', component: () => import('../views/ProductionNew.vue') },
       { path: 'shipments', name: 'Shipments', component: () => import('../views/ShipmentList.vue') },
@@ -26,6 +27,8 @@ const routes = [
       { path: 'sales-orders', name: 'SalesOrders', component: () => import('../views/SalesOrders.vue') },
       { path: 'purchases', name: 'Purchases', component: () => import('../views/Purchases.vue') },
       { path: 'receivables', name: 'Receivables', component: () => import('../views/Receivables.vue') },
+      { path: 'lab', name: 'LabRecords', component: () => import('../views/LabRecords.vue') },
+      { path: 'reports', name: 'Reports', component: () => import('../views/Reports.vue') },
     ],
   },
 ]

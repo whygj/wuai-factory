@@ -36,6 +36,9 @@ export const getMe = () => api.get('/auth/me')
 
 // Dashboard
 export const getDashboard = () => api.get('/dashboard/overview')
+export const getBossDashboard = () => api.get('/dashboard/boss')
+export const getClerkDashboard = () => api.get('/dashboard/clerk')
+export const getLeaderDashboard = () => api.get('/dashboard/leader')
 
 // Materials
 export const getMaterials = (params) => api.get('/materials', { params })
@@ -97,6 +100,16 @@ export const getReceivablesSummary = () => api.get('/receivables/summary')
 export const getMaterialDistribution = () => api.get('/stats/material-distribution')
 export const getProductRanking = () => api.get('/stats/product-ranking')
 export const getProductionTrend = (days = 7) => api.get('/stats/production-trend', { params: { days } })
+
+// Lab Records
+export const getLabRecords = (params) => api.get('/lab', { params })
+export const createLabRecord = (data) => api.post('/lab', data)
+export const updateLabRecord = (id, data) => api.put(`/lab/${id}`, data)
+
+// Reports
+export const getSalesReport = (params) => api.get('/reports/sales', { params })
+export const getProductionReport = (params) => api.get('/reports/production', { params })
+export const getInventoryReport = () => api.get('/reports/inventory')
 
 // Permission helper
 export function canEdit(module) {

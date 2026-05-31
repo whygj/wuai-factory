@@ -176,3 +176,18 @@ class PurchaseOrder(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     supplier = relationship("Supplier")
+
+
+class LabRecord(Base):
+    __tablename__ = "lab_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False)
+    name = Column(Text)
+    recipe = Column(Text)
+    process_params = Column(Text)
+    result = Column(Text)
+    score = Column(REAL)
+    notes = Column(Text)
+    operator = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)

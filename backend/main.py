@@ -98,6 +98,21 @@ def dashboard_overview(current_user: User = Depends(get_current_user), db: Sessi
     return crud.get_dashboard_overview(db)
 
 
+@app.get("/api/dashboard/boss")
+def boss_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return crud.get_boss_dashboard(db)
+
+
+@app.get("/api/dashboard/clerk")
+def clerk_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return crud.get_clerk_dashboard(db)
+
+
+@app.get("/api/dashboard/leader")
+def leader_dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return crud.get_leader_dashboard(db)
+
+
 # ==================== Materials ====================
 
 @app.get("/api/materials")
@@ -667,3 +682,75 @@ def receivables_summary(
     db: Session = Depends(get_db),
 ):
     return crud.get_receivables_summary(db)
+
+
+# ==================== Lab Records ====================
+
+@app.get("/api/lab")
+def list_lab_records(
+    result: str = Query(""),
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    page: int = Query(1),
+    page_size: int = Query(50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_lab_records(db, result=result, start_date=start_date, end_date=end_date, page=page, page_size=page_size)
+
+
+@app.post("/api/lab", response_model=schemas.LabRecordResponse)
+def create_lab_record(
+    data: schemas.LabRecordCreate,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if not check_write_permission(current_role, "lab"):
+        raise HTTPException(status_code=403, detail="无权限")
+    return crud.create_lab_record(db, data, current_user.username)
+
+
+@app.put("/api/lab/{record_id}", response_model=schemas.LabRecordResponse)
+def update_lab_record(
+    record_id: int,
+    data: schemas.LabRecordUpdate,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if not check_write_permission(current_role, "lab"):
+        raise HTTPException(status_code=403, detail="无权限")
+    record = crud.get_lab_record(db, record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    return crud.update_lab_record(db, record, data)
+
+
+# ==================== Reports ====================
+
+@app.get("/api/reports/sales")
+def sales_report(
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_sales_report(db, start_date=start_date, end_date=end_date)
+
+
+@app.get("/api/reports/production")
+def production_report(
+    days: int = Query(30),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_production_report(db, days=days)
+
+
+@app.get("/api/reports/inventory")
+def inventory_report(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_inventory_report(db)

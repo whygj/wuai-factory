@@ -7,40 +7,37 @@
       </div>
       <nav class="sidebar-nav">
         <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
-          <span class="nav-icon">📊</span>
-          <span>仪表盘</span>
+          <span class="nav-icon">📊</span><span>仪表盘</span>
         </router-link>
         <router-link to="/customers" class="nav-item" :class="{ active: $route.path === '/customers' }">
-          <span class="nav-icon">👥</span>
-          <span>客户管理</span>
+          <span class="nav-icon">👥</span><span>客户管理</span>
         </router-link>
         <router-link to="/suppliers" class="nav-item" :class="{ active: $route.path === '/suppliers' }">
-          <span class="nav-icon">🏭</span>
-          <span>供应商管理</span>
-        </router-link>
-        <router-link to="/materials" class="nav-item" :class="{ active: $route.path === '/materials' }">
-          <span class="nav-icon">🧈</span>
-          <span>原料库存</span>
+          <span class="nav-icon">🏭</span><span>供应商</span>
         </router-link>
         <router-link to="/purchases" class="nav-item" :class="{ active: $route.path === '/purchases' }">
-          <span class="nav-icon">📦</span>
-          <span>采购管理</span>
+          <span class="nav-icon">📦</span><span>采购管理</span>
+        </router-link>
+        <router-link to="/materials" class="nav-item" :class="{ active: $route.path === '/materials' }">
+          <span class="nav-icon">🧈</span><span>原料库存</span>
+        </router-link>
+        <router-link to="/products" class="nav-item" :class="{ active: $route.path === '/products' }">
+          <span class="nav-icon">📦</span><span>产品库存</span>
         </router-link>
         <router-link to="/production/new" class="nav-item" :class="{ active: $route.path.includes('/production') }">
-          <span class="nav-icon">⚙️</span>
-          <span>生产管理</span>
+          <span class="nav-icon">⚙️</span><span>生产管理</span>
+        </router-link>
+        <router-link to="/lab" class="nav-item" :class="{ active: $route.path === '/lab' }">
+          <span class="nav-icon">🔬</span><span>试验室</span>
         </router-link>
         <router-link to="/sales-orders" class="nav-item" :class="{ active: $route.path === '/sales-orders' }">
-          <span class="nav-icon">🚚</span>
-          <span>销售发货</span>
-        </router-link>
-        <router-link to="/shipments/new" class="nav-item" :class="{ active: $route.path.includes('/shipments') }">
-          <span class="nav-icon">📋</span>
-          <span>直接发货</span>
+          <span class="nav-icon">🚚</span><span>销售发货</span>
         </router-link>
         <router-link to="/receivables" class="nav-item" :class="{ active: $route.path === '/receivables' }">
-          <span class="nav-icon">💰</span>
-          <span>应收款</span>
+          <span class="nav-icon">💰</span><span>应收款</span>
+        </router-link>
+        <router-link to="/reports" class="nav-item" :class="{ active: $route.path === '/reports' }">
+          <span class="nav-icon">📊</span><span>经营报表</span>
         </router-link>
       </nav>
       <div class="sidebar-footer">

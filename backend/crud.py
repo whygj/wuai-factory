@@ -7,6 +7,7 @@ from models import (
     User, RawMaterial, Product, InventoryTransaction,
     ProductionRecord, ShipmentRecord, OperationLog,
     Customer, Supplier, SalesOrder, PurchaseOrder,
+    LabRecord,
 )
 from schemas import (
     MaterialCreate, MaterialUpdate, InboundRequest,
@@ -17,6 +18,7 @@ from schemas import (
     SupplierCreate, SupplierUpdate,
     SalesOrderCreate, SalesOrderStatusUpdate, PaymentRequest,
     PurchaseOrderCreate, PurchaseStatusUpdate,
+    LabRecordCreate, LabRecordUpdate,
 )
 
 
@@ -852,3 +854,282 @@ def get_production_trend(db: Session, days: int = 7):
         d = start + timedelta(days=i)
         trend.append({"date": d.strftime("%Y-%m-%d"), "quantity": date_map.get(d, 0)})
     return trend
+
+
+# ==================== Role-based Dashboards ====================
+
+def get_boss_dashboard(db: Session):
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    month_sales = db.query(func.coalesce(func.sum(SalesOrder.total_amount), 0)).filter(
+        SalesOrder.date >= month_start,
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    receivables = db.query(func.coalesce(func.sum(SalesOrder.total_amount - SalesOrder.paid_amount), 0)).filter(
+        SalesOrder.payment_status != "已付款",
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    alert_count = db.query(func.count(RawMaterial.id)).filter(
+        RawMaterial.current_stock <= RawMaterial.safety_stock,
+        RawMaterial.safety_stock > 0,
+    ).scalar()
+
+    today_prod = db.query(func.coalesce(func.sum(ProductionRecord.quantity), 0)).filter(
+        ProductionRecord.date == today
+    ).scalar()
+
+    customer_top5 = db.query(
+        Customer.name, func.sum(SalesOrder.total_amount).label('amount')
+    ).join(SalesOrder).filter(
+        SalesOrder.date >= month_start,
+        SalesOrder.status != "已取消",
+    ).group_by(Customer.id).order_by(func.sum(SalesOrder.total_amount).desc()).limit(5).all()
+
+    alerts = db.query(RawMaterial).filter(
+        RawMaterial.current_stock <= RawMaterial.safety_stock,
+        RawMaterial.safety_stock > 0,
+    ).all()
+
+    trend_start = today - timedelta(days=29)
+    sales_trend = db.query(
+        SalesOrder.date, func.coalesce(func.sum(SalesOrder.total_amount), 0)
+    ).filter(
+        SalesOrder.date >= trend_start,
+        SalesOrder.status != "已取消",
+    ).group_by(SalesOrder.date).all()
+
+    activities = []
+
+    for po in db.query(PurchaseOrder).filter(PurchaseOrder.date == today).all():
+        activities.append({"time": po.created_at.strftime("%H:%M") if po.created_at else "", "type": "采购入库", "desc": f"采购单 {po.order_no}", "icon": "📦"})
+    for pr in db.query(ProductionRecord).filter(ProductionRecord.date == today).all():
+        pname = pr.product.name if pr.product else ""
+        activities.append({"time": pr.created_at.strftime("%H:%M") if pr.created_at else "", "type": "生产", "desc": f"生产 {pname} {pr.quantity}{pr.unit or ''}", "icon": "🏭"})
+    for so in db.query(SalesOrder).filter(SalesOrder.date == today).all():
+        cname = so.customer.name if so.customer else ""
+        status_text = so.status
+        activities.append({"time": so.created_at.strftime("%H:%M") if so.created_at else "", "type": "销售", "desc": f"订单 {so.order_no} → {cname} [{status_text}]", "icon": "🚚"})
+
+    activities.sort(key=lambda x: x["time"], reverse=True)
+
+    return {
+        "month_sales": month_sales,
+        "receivables": receivables,
+        "alert_count": alert_count,
+        "today_production": today_prod,
+        "customer_top5": [{"name": r[0], "amount": r[1]} for r in customer_top5],
+        "alerts": [{"id": a.id, "name": a.name, "current": a.current_stock, "safety": a.safety_stock, "unit": a.unit} for a in alerts],
+        "sales_trend": [{"date": r[0].strftime("%Y-%m-%d") if hasattr(r[0], 'strftime') else str(r[0]), "amount": r[1]} for r in sales_trend],
+        "today_activities": activities,
+    }
+
+
+def get_clerk_dashboard(db: Session):
+    today = date.today()
+
+    pending_ship = db.query(func.count(SalesOrder.id)).filter(SalesOrder.status == "待发货").scalar()
+    pending_inbound = db.query(func.count(PurchaseOrder.id)).filter(PurchaseOrder.status == "待到货").scalar()
+    alerts = db.query(RawMaterial).filter(
+        RawMaterial.current_stock <= RawMaterial.safety_stock,
+        RawMaterial.safety_stock > 0,
+    ).all()
+    today_sales = db.query(func.coalesce(func.sum(SalesOrder.total_amount), 0)).filter(
+        SalesOrder.date == today,
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    return {
+        "pending_shipments": pending_ship,
+        "pending_inbound": pending_inbound,
+        "alerts": [{"id": a.id, "name": a.name, "current": a.current_stock, "safety": a.safety_stock, "unit": a.unit} for a in alerts],
+        "today_sales": today_sales,
+    }
+
+
+def get_leader_dashboard(db: Session):
+    today = date.today()
+
+    today_records = db.query(ProductionRecord).filter(ProductionRecord.date == today).all()
+    today_quantity = sum(r.quantity for r in today_records)
+
+    trend = get_production_trend(db, days=7)
+
+    low_materials = db.query(RawMaterial).filter(
+        RawMaterial.safety_stock > 0
+    ).order_by((RawMaterial.current_stock / RawMaterial.safety_stock).asc()).limit(10).all()
+
+    return {
+        "today_quantity": today_quantity,
+        "today_records": len(today_records),
+        "trend": trend,
+        "material_status": [{"name": m.name, "current": m.current_stock, "safety": m.safety_stock, "unit": m.unit, "ratio": round(m.current_stock / m.safety_stock, 2) if m.safety_stock > 0 else 0} for m in low_materials],
+    }
+
+
+# ==================== Lab Records ====================
+
+def get_lab_records(db: Session, result: str = "", start_date: str = "", end_date: str = "", page: int = 1, page_size: int = 50):
+    query = db.query(LabRecord)
+    if result:
+        query = query.filter(LabRecord.result == result)
+    if start_date:
+        query = query.filter(LabRecord.date >= start_date)
+    if end_date:
+        query = query.filter(LabRecord.date <= end_date)
+    total = query.count()
+    items = query.order_by(LabRecord.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "items": items}
+
+
+def get_lab_record(db: Session, record_id: int) -> Optional[LabRecord]:
+    return db.query(LabRecord).filter(LabRecord.id == record_id).first()
+
+
+def create_lab_record(db: Session, data: LabRecordCreate, operator: str) -> LabRecord:
+    record = LabRecord(
+        date=data.date,
+        name=data.name,
+        recipe=data.recipe,
+        process_params=data.process_params,
+        result=data.result or "待测",
+        score=data.score,
+        notes=data.notes,
+        operator=operator,
+    )
+    db.add(record)
+    db.flush()
+    log_operation(db, operator, "新建试验记录", "lab_records", record.id, f"试验 {data.name}")
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def update_lab_record(db: Session, record: LabRecord, data: LabRecordUpdate) -> LabRecord:
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(record, key, value)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+# ==================== Reports ====================
+
+def get_sales_report(db: Session, start_date: str = "", end_date: str = ""):
+    today = date.today()
+    if not start_date:
+        start_date = (today.replace(day=1)).strftime("%Y-%m-%d")
+    if not end_date:
+        end_date = today.strftime("%Y-%m-%d")
+
+    total_amount = db.query(func.coalesce(func.sum(SalesOrder.total_amount), 0)).filter(
+        SalesOrder.date >= start_date,
+        SalesOrder.date <= end_date,
+        SalesOrder.status != "已取消",
+    ).scalar()
+    total_orders = db.query(func.count(SalesOrder.id)).filter(
+        SalesOrder.date >= start_date,
+        SalesOrder.date <= end_date,
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    by_customer = db.query(
+        Customer.name,
+        func.coalesce(func.sum(SalesOrder.total_amount), 0),
+        func.count(SalesOrder.id),
+    ).join(SalesOrder, SalesOrder.customer_id == Customer.id).filter(
+        SalesOrder.date >= start_date,
+        SalesOrder.date <= end_date,
+        SalesOrder.status != "已取消",
+    ).group_by(Customer.id).order_by(func.sum(SalesOrder.total_amount).desc()).all()
+
+    orders = db.query(SalesOrder).filter(
+        SalesOrder.date >= start_date,
+        SalesOrder.date <= end_date,
+        SalesOrder.status != "已取消",
+    ).all()
+    product_totals = {}
+    for o in orders:
+        items = json.loads(o.items) if o.items else []
+        for item in items:
+            name = item.get("product_name", str(item["product_id"]))
+            product_totals[name] = product_totals.get(name, 0) + item.get("subtotal", 0)
+    sorted_products = sorted(product_totals.items(), key=lambda x: x[1], reverse=True)
+
+    daily = db.query(
+        SalesOrder.date,
+        func.coalesce(func.sum(SalesOrder.total_amount), 0),
+    ).filter(
+        SalesOrder.date >= start_date,
+        SalesOrder.date <= end_date,
+        SalesOrder.status != "已取消",
+    ).group_by(SalesOrder.date).order_by(SalesOrder.date).all()
+
+    return {
+        "total_amount": total_amount,
+        "total_orders": total_orders,
+        "start_date": start_date,
+        "end_date": end_date,
+        "by_customer": [{"name": r[0], "amount": r[1], "count": r[2]} for r in by_customer],
+        "by_product": [{"name": p[0], "amount": p[1]} for p in sorted_products],
+        "daily": [{"date": r[0].strftime("%Y-%m-%d") if hasattr(r[0], 'strftime') else str(r[0]), "amount": r[1]} for r in daily],
+    }
+
+
+def get_production_report(db: Session, days: int = 30):
+    start = date.today() - timedelta(days=days - 1)
+
+    total_qty = db.query(func.coalesce(func.sum(ProductionRecord.quantity), 0)).filter(
+        ProductionRecord.date >= start
+    ).scalar()
+    total_records = db.query(func.count(ProductionRecord.id)).filter(
+        ProductionRecord.date >= start
+    ).scalar()
+
+    by_product = db.query(
+        Product.name,
+        func.coalesce(func.sum(ProductionRecord.quantity), 0),
+        func.count(ProductionRecord.id),
+    ).join(ProductionRecord, ProductionRecord.product_id == Product.id).filter(
+        ProductionRecord.date >= start
+    ).group_by(Product.id).order_by(func.sum(ProductionRecord.quantity).desc()).all()
+
+    daily = db.query(
+        ProductionRecord.date,
+        func.coalesce(func.sum(ProductionRecord.quantity), 0),
+    ).filter(
+        ProductionRecord.date >= start
+    ).group_by(ProductionRecord.date).order_by(ProductionRecord.date).all()
+
+    date_map = {r[0]: r[1] for r in daily}
+    daily_filled = []
+    for i in range(days):
+        d = start + timedelta(days=i)
+        daily_filled.append({"date": d.strftime("%Y-%m-%d"), "quantity": date_map.get(d, 0)})
+
+    return {
+        "total_quantity": total_qty,
+        "total_records": total_records,
+        "days": days,
+        "by_product": [{"name": r[0], "quantity": r[1], "count": r[2]} for r in by_product],
+        "daily": daily_filled,
+    }
+
+
+def get_inventory_report(db: Session):
+    materials = db.query(RawMaterial).order_by(RawMaterial.name).all()
+    products = db.query(Product).order_by(Product.name).all()
+
+    alert_materials = [{"id": m.id, "name": m.name, "current": m.current_stock, "safety": m.safety_stock, "unit": m.unit, "category": m.category} for m in materials if m.safety_stock > 0 and m.current_stock <= m.safety_stock]
+
+    return {
+        "materials": [{"id": m.id, "name": m.name, "category": m.category, "current": m.current_stock, "unit": m.unit, "safety": m.safety_stock, "price": m.purchase_price, "value": m.current_stock * (m.purchase_price or 0)} for m in materials],
+        "products": [{"id": p.id, "name": p.name, "category": p.category, "spec": p.spec, "current": p.current_stock, "unit": p.unit} for p in products],
+        "alert_materials": alert_materials,
+        "material_count": len(materials),
+        "product_count": len(products),
+        "alert_count": len(alert_materials),
+        "total_material_value": sum(m.current_stock * (m.purchase_price or 0) for m in materials),
+    }

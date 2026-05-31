@@ -370,3 +370,39 @@ class ProductRanking(BaseModel):
 class ProductionTrend(BaseModel):
     date: str
     quantity: float
+
+
+# Lab Record
+class LabRecordCreate(BaseModel):
+    date: date
+    name: str
+    recipe: Optional[str] = None
+    process_params: Optional[str] = None
+    result: Optional[str] = None
+    score: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class LabRecordUpdate(BaseModel):
+    name: Optional[str] = None
+    recipe: Optional[str] = None
+    process_params: Optional[str] = None
+    result: Optional[str] = None
+    score: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class LabRecordResponse(BaseModel):
+    id: int
+    date: date
+    name: Optional[str] = None
+    recipe: Optional[str] = None
+    process_params: Optional[str] = None
+    result: Optional[str] = None
+    score: Optional[float] = None
+    notes: Optional[str] = None
+    operator: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
