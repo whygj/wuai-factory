@@ -178,7 +178,7 @@ import { Money, TrendCharts, Document, Warning, Box, OfficeBuilding, Search, Van
 import KpiCard from './KpiCard.vue'
 import { getBossDashboardExtended, quickSearch } from '../api'
 
-use([LineChart, BarChart, TitleComponent, TooltipComponent, GridRenderer])
+use([LineChart, BarChart, TitleComponent, TooltipComponent, GridComponent, CanvasRenderer])
 
 const data = ref({
   month_sales: 0, last_month_sales: 0, month_change: 0,
