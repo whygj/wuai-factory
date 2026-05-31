@@ -17,7 +17,7 @@
       <el-button type="primary" plain @click="loadData" size="large">查询</el-button>
     </div>
 
-    <el-table :data="customers" stripe style="width: 100%" size="large">
+    <el-table :data="customers" stripe style="width: 100%" size="large" class="hidden-mobile">
       <el-table-column prop="name" label="客户名称" min-width="140" />
       <el-table-column prop="contact" label="联系人" width="120" />
       <el-table-column prop="phone" label="电话" width="140" />
@@ -41,6 +41,26 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <div class="card-list visible-mobile">
+      <div class="record-card" v-for="item in customers" :key="item.id">
+        <div class="card-main">
+          <div class="card-title">{{ item.name }}</div>
+          <div style="display:flex;gap:4px;">
+            <el-tag v-if="item.type" size="small" type="info">{{ item.type }}</el-tag>
+            <el-tag v-if="item.level" size="small" :type="item.level === '核心' ? 'danger' : item.level === 'VIP' ? 'warning' : ''">{{ item.level }}</el-tag>
+          </div>
+        </div>
+        <div class="card-info">
+          <span v-if="item.contact">{{ item.contact }}</span>
+          <span v-if="item.phone">{{ item.phone }}</span>
+        </div>
+        <div class="card-actions">
+          <el-button v-if="canEdit('customer')" size="small" type="primary" @click="openDialog(item)">编辑</el-button>
+          <el-button v-if="currentRole === 'boss'" size="small" type="danger" @click="handleDelete(item)">删除</el-button>
+        </div>
+      </div>
+    </div>
 
     <div class="pagination" v-if="total > pageSize">
       <el-pagination
@@ -187,13 +207,26 @@ onMounted(loadData)
   justify-content: center;
   margin-top: 20px;
 }
+.visible-mobile { display: none; }
+.hidden-mobile { display: block; }
+.card-list { display: flex; flex-direction: column; gap: 8px; }
+.record-card {
+  background: white; border-radius: 8px; padding: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.card-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-title { font-size: 15px; font-weight: 600; color: #212121; }
+.card-sub { font-size: 12px; color: #999; }
+.card-info { display: flex; gap: 16px; font-size: 13px; color: #666; margin-bottom: 6px; flex-wrap: wrap; }
+.card-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
 @media (max-width: 768px) {
+  .visible-mobile { display: block; }
+  .hidden-mobile { display: none; }
   .page { padding: 8px; }
   .page-header { flex-direction: column; align-items: stretch; gap: 8px; }
   .filter-bar { flex-direction: column; }
   .filter-bar .el-input, .filter-bar .el-select { width: 100% !important; }
-  :deep(.el-table) { font-size: 13px; }
-  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
   :deep(.el-form-item__label) { font-size: 13px; }
   :deep(.el-dialog) { margin: 8px auto; }
 }

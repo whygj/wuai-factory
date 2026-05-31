@@ -27,7 +27,7 @@
 
     <el-tabs v-model="activeTab" size="large">
       <el-tab-pane label="未回款订单" name="list">
-        <el-table :data="receivables" stripe style="width: 100%" size="large">
+        <el-table :data="receivables" stripe style="width: 100%" size="large" class="hidden-mobile">
           <el-table-column prop="order_no" label="订单号" width="160" />
           <el-table-column prop="date" label="日期" width="120" />
           <el-table-column prop="customer_name" label="客户" min-width="140" />
@@ -55,10 +55,33 @@
             </template>
           </el-table-column>
         </el-table>
+
+        <div class="card-list visible-mobile">
+          <div class="record-card" v-for="item in receivables" :key="item.id">
+            <div class="card-main">
+              <div class="card-title">{{ item.customer_name }}</div>
+              <el-tag :type="paymentTagType(item.payment_status)" size="small">{{ item.payment_status }}</el-tag>
+            </div>
+            <div class="card-info">
+              <span>{{ item.order_no }}</span>
+              <span>{{ item.date }}</span>
+            </div>
+            <div class="card-info">
+              <span>金额: ¥{{ (item.total_amount || 0).toFixed(2) }}</span>
+              <span style="color: #67c23a;">已付: ¥{{ (item.paid_amount || 0).toFixed(2) }}</span>
+            </div>
+            <div class="card-info">
+              <span style="color: #E65100; font-weight: 600;">未付: ¥{{ (item.unpaid_amount || 0).toFixed(2) }}</span>
+            </div>
+            <div class="card-actions">
+              <el-button v-if="canEdit('sales')" size="small" type="primary" @click="openPaymentDialog(item)">登记回款</el-button>
+            </div>
+          </div>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="逾期订单" name="overdue">
-        <el-table :data="overdueList" stripe style="width: 100%" size="large">
+        <el-table :data="overdueList" stripe style="width: 100%" size="large" class="hidden-mobile">
           <el-table-column prop="order_no" label="订单号" width="160" />
           <el-table-column prop="date" label="日期" width="120" />
           <el-table-column prop="customer_name" label="客户" min-width="140" />
@@ -78,10 +101,29 @@
             </template>
           </el-table-column>
         </el-table>
+
+        <div class="card-list visible-mobile">
+          <div class="record-card" v-for="item in overdueList" :key="item.id">
+            <div class="card-main">
+              <div class="card-title">{{ item.customer_name }}</div>
+              <el-tag type="danger" size="small">{{ item.overdue_days }}天</el-tag>
+            </div>
+            <div class="card-info">
+              <span>{{ item.order_no }}</span>
+              <span>{{ item.date }}</span>
+            </div>
+            <div class="card-info">
+              <span style="color: #f56c6c; font-weight: 600;">未付: ¥{{ (item.unpaid_amount || 0).toFixed(2) }}</span>
+            </div>
+            <div class="card-actions">
+              <el-button v-if="canEdit('sales')" size="small" type="primary" @click="openPaymentDialog(item)">登记回款</el-button>
+            </div>
+          </div>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="按客户汇总" name="summary">
-        <el-table :data="summaryList" stripe style="width: 100%" size="large">
+        <el-table :data="summaryList" stripe style="width: 100%" size="large" class="hidden-mobile">
           <el-table-column prop="customer_name" label="客户名称" min-width="200" />
           <el-table-column label="订单总额" width="140" align="right">
             <template #default="{ row }">¥{{ (row.total_amount || 0).toFixed(2) }}</template>
@@ -97,6 +139,21 @@
             </template>
           </el-table-column>
         </el-table>
+
+        <div class="card-list visible-mobile">
+          <div class="record-card" v-for="(item, idx) in summaryList" :key="idx">
+            <div class="card-main">
+              <div class="card-title">{{ item.customer_name }}</div>
+            </div>
+            <div class="card-info">
+              <span>总额: ¥{{ (item.total_amount || 0).toFixed(2) }}</span>
+            </div>
+            <div class="card-info">
+              <span style="color: #67c23a;">已付: ¥{{ (item.paid_amount || 0).toFixed(2) }}</span>
+              <span style="color: #E65100; font-weight: 600;">未付: ¥{{ (item.unpaid_amount || 0).toFixed(2) }}</span>
+            </div>
+          </div>
+        </div>
       </el-tab-pane>
     </el-tabs>
 
@@ -220,13 +277,26 @@ onMounted(loadData)
   color: #999;
   margin-top: 4px;
 }
+.visible-mobile { display: none; }
+.hidden-mobile { display: block; }
+.card-list { display: flex; flex-direction: column; gap: 8px; }
+.record-card {
+  background: white; border-radius: 8px; padding: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.card-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-title { font-size: 15px; font-weight: 600; color: #212121; }
+.card-sub { font-size: 12px; color: #999; }
+.card-info { display: flex; gap: 16px; font-size: 13px; color: #666; margin-bottom: 6px; flex-wrap: wrap; }
+.card-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
 @media (max-width: 768px) {
+  .visible-mobile { display: block; }
+  .hidden-mobile { display: none; }
   .page { padding: 8px; }
   .stats-cards {
     flex-direction: column;
   }
-  :deep(.el-table) { font-size: 13px; }
-  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
   :deep(.el-form-item__label) { font-size: 13px; }
   :deep(.el-dialog) { margin: 8px auto; }
 }

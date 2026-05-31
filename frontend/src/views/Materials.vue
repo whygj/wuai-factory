@@ -10,7 +10,7 @@
 
     <!-- Materials Table -->
     <el-card>
-      <el-table :data="materials" stripe style="width: 100%">
+      <el-table :data="materials" stripe style="width: 100%" class="hidden-mobile">
         <el-table-column prop="name" label="原料名称" min-width="120" />
         <el-table-column prop="category" label="分类" width="120" />
         <el-table-column prop="current_stock" label="当前库存" width="120">
@@ -30,6 +30,25 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="card-list visible-mobile">
+        <div class="record-card" v-for="item in materials" :key="item.id">
+          <div class="card-main">
+            <div class="card-title">{{ item.name }}</div>
+            <el-tag v-if="item.category" size="small">{{ item.category }}</el-tag>
+          </div>
+          <div class="card-info">
+            <span>库存: <span :class="{ 'low-stock': item.current_stock <= item.safety_stock && item.safety_stock > 0 }">{{ item.current_stock }}</span> {{ item.unit }}</span>
+            <span>安全线: {{ item.safety_stock }} {{ item.unit }}</span>
+          </div>
+          <div class="card-info" v-if="item.supplier">
+            <span>供应商: {{ item.supplier }}</span>
+          </div>
+          <div class="card-actions">
+            <el-button size="small" type="primary" @click="openInbound(item)">入库</el-button>
+          </div>
+        </div>
+      </div>
     </el-card>
 
     <!-- Add Material Dialog -->
@@ -176,7 +195,22 @@ onMounted(loadMaterials)
   font-weight: 700;
 }
 
+.visible-mobile { display: none; }
+.hidden-mobile { display: block; }
+.card-list { display: flex; flex-direction: column; gap: 8px; }
+.record-card {
+  background: white; border-radius: 8px; padding: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.card-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-title { font-size: 15px; font-weight: 600; color: #212121; }
+.card-sub { font-size: 12px; color: #999; }
+.card-info { display: flex; gap: 16px; font-size: 13px; color: #666; margin-bottom: 6px; flex-wrap: wrap; }
+.card-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
 @media (max-width: 768px) {
+  .visible-mobile { display: block; }
+  .hidden-mobile { display: none; }
   .page { padding: 8px; }
   .page-header {
     flex-direction: column;
@@ -186,8 +220,6 @@ onMounted(loadMaterials)
     flex-direction: column;
   }
   .page-actions .el-input { width: 100% !important; }
-  :deep(.el-table) { font-size: 13px; }
-  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
   :deep(.el-form-item__label) { font-size: 13px; }
   :deep(.el-dialog) { margin: 8px auto; }
 }

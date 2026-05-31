@@ -9,7 +9,7 @@
     </div>
 
     <el-card>
-      <el-table :data="records" stripe style="width: 100%">
+      <el-table :data="records" stripe style="width: 100%" class="hidden-mobile">
         <el-table-column prop="date" label="日期" width="120" />
         <el-table-column prop="product_name" label="产品" min-width="140" />
         <el-table-column prop="quantity" label="数量" width="100">
@@ -19,6 +19,23 @@
         <el-table-column prop="operator" label="操作人" width="80" />
         <el-table-column prop="notes" label="备注" min-width="120" show-overflow-tooltip />
       </el-table>
+
+      <div class="card-list visible-mobile">
+        <div class="record-card" v-for="item in records" :key="item.id">
+          <div class="card-main">
+            <div class="card-title">{{ item.product_name }}</div>
+            <div class="card-sub">{{ item.date }}</div>
+          </div>
+          <div class="card-info">
+            <span>数量: {{ item.quantity }} {{ item.unit }}</span>
+            <span v-if="item.sugar_degree">糖度: {{ item.sugar_degree }}</span>
+          </div>
+          <div class="card-info">
+            <span v-if="item.operator">操作人: {{ item.operator }}</span>
+            <span v-if="item.notes" class="card-sub">{{ item.notes }}</span>
+          </div>
+        </div>
+      </div>
     </el-card>
   </div>
 </template>
@@ -67,7 +84,22 @@ onMounted(loadRecords)
   align-items: center;
 }
 
+.visible-mobile { display: none; }
+.hidden-mobile { display: block; }
+.card-list { display: flex; flex-direction: column; gap: 8px; }
+.record-card {
+  background: white; border-radius: 8px; padding: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.card-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-title { font-size: 15px; font-weight: 600; color: #212121; }
+.card-sub { font-size: 12px; color: #999; }
+.card-info { display: flex; gap: 16px; font-size: 13px; color: #666; margin-bottom: 6px; flex-wrap: wrap; }
+.card-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
 @media (max-width: 768px) {
+  .visible-mobile { display: block; }
+  .hidden-mobile { display: none; }
   .page-actions {
     flex-direction: column;
     width: 100%;

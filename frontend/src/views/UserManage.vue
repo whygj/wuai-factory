@@ -26,7 +26,7 @@
     <!-- All Users -->
     <div class="section" style="margin-top: 24px;">
       <h3 class="section-title">全部用户</h3>
-      <el-table :data="allUsers" stripe style="width: 100%;" size="large">
+      <el-table :data="allUsers" stripe style="width: 100%;" size="large" class="hidden-mobile">
         <el-table-column prop="display_name" label="姓名" width="120" />
         <el-table-column prop="phone" label="手机号" width="140" />
         <el-table-column label="角色" width="100">
@@ -47,6 +47,22 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="card-list visible-mobile">
+        <div class="record-card" v-for="item in allUsers" :key="item.id">
+          <div class="card-main">
+            <div class="card-title">{{ item.display_name || '未命名' }}</div>
+            <el-tag size="small" :type="statusType(item.status)">{{ statusText(item.status) }}</el-tag>
+          </div>
+          <div class="card-info">
+            <span>{{ item.phone }}</span>
+            <el-tag size="small" :type="item.roles[0] === 'boss' ? 'danger' : item.roles[0] === 'clerk' ? 'warning' : 'info'">
+              {{ roleLabels[item.roles[0]] || item.roles[0] }}
+            </el-tag>
+          </div>
+          <div class="card-info card-sub">{{ formatTime(item.created_at) }}</div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -193,7 +209,22 @@ onMounted(loadData)
   gap: 8px;
 }
 
+.visible-mobile { display: none; }
+.hidden-mobile { display: block; }
+.card-list { display: flex; flex-direction: column; gap: 8px; }
+.record-card {
+  background: white; border-radius: 8px; padding: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.card-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-title { font-size: 15px; font-weight: 600; color: #212121; }
+.card-sub { font-size: 12px; color: #999; }
+.card-info { display: flex; gap: 16px; font-size: 13px; color: #666; margin-bottom: 6px; flex-wrap: wrap; align-items: center; }
+.card-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
 @media (max-width: 600px) {
+  .visible-mobile { display: block; }
+  .hidden-mobile { display: none; }
   .user-card {
     flex-wrap: wrap;
   }

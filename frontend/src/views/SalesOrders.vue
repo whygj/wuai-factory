@@ -22,7 +22,7 @@
       <el-button type="primary" plain @click="loadData" size="large">查询</el-button>
     </div>
 
-    <el-table :data="orders" stripe style="width: 100%" size="large">
+    <el-table :data="orders" stripe style="width: 100%" size="large" class="hidden-mobile">
       <el-table-column prop="order_no" label="订单号" width="160" />
       <el-table-column prop="date" label="日期" width="120" />
       <el-table-column prop="customer_name" label="客户" min-width="140" />
@@ -51,6 +51,29 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <div class="card-list visible-mobile">
+      <div class="record-card" v-for="item in orders" :key="item.id">
+        <div class="card-main">
+          <div class="card-title">{{ item.order_no }}</div>
+          <el-tag :type="statusTagType(item.status)" size="small">{{ item.status }}</el-tag>
+        </div>
+        <div class="card-info">
+          <span>{{ item.customer_name }}</span>
+          <span>{{ item.date }}</span>
+        </div>
+        <div class="card-info">
+          <span style="color: #E65100; font-weight: 600;">¥{{ (item.total_amount || 0).toFixed(2) }}</span>
+          <el-tag :type="paymentTagType(item.payment_status)" size="small">{{ item.payment_status }}</el-tag>
+        </div>
+        <div class="card-actions">
+          <el-button size="small" @click="viewDetail(item)">明细</el-button>
+          <el-button v-if="canEdit('sales') && item.status === '待发货'" size="small" type="success" @click="handleShip(item)">发货</el-button>
+          <el-button v-if="canEdit('sales') && item.payment_status !== '已付款' && item.status !== '已取消'" size="small" type="warning" @click="openPaymentDialog(item)">回款</el-button>
+          <el-button v-if="canEdit('sales') && item.status === '已发货'" size="small" type="primary" @click="handleSign(item)">签收</el-button>
+        </div>
+      </div>
+    </div>
 
     <div class="pagination" v-if="total > pageSize">
       <el-pagination background layout="prev, pager, next" :total="total" :page-size="pageSize" v-model:current-page="page" @current-change="loadData" />
@@ -328,15 +351,28 @@ onMounted(() => { loadData(); loadOptions() })
   font-weight: 600;
   color: #E65100;
 }
+.visible-mobile { display: none; }
+.hidden-mobile { display: block; }
+.card-list { display: flex; flex-direction: column; gap: 8px; }
+.record-card {
+  background: white; border-radius: 8px; padding: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.card-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-title { font-size: 15px; font-weight: 600; color: #212121; }
+.card-sub { font-size: 12px; color: #999; }
+.card-info { display: flex; gap: 16px; font-size: 13px; color: #666; margin-bottom: 6px; flex-wrap: wrap; }
+.card-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
 @media (max-width: 768px) {
+  .visible-mobile { display: block; }
+  .hidden-mobile { display: none; }
   .page { padding: 8px; }
   .page-header { flex-direction: column; align-items: stretch; gap: 8px; }
   .filter-bar { flex-direction: column; }
   .filter-bar .el-input, .filter-bar .el-select { width: 100% !important; }
   .order-item-row { flex-wrap: wrap; }
   .order-item-row .el-input-number { width: 100px !important; }
-  :deep(.el-table) { font-size: 13px; }
-  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
   :deep(.el-form-item__label) { font-size: 13px; }
   :deep(.el-dialog) { margin: 8px auto; }
 }
