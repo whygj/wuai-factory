@@ -10,24 +10,36 @@
           <span class="nav-icon">📊</span>
           <span>仪表盘</span>
         </router-link>
+        <router-link to="/customers" class="nav-item" :class="{ active: $route.path === '/customers' }">
+          <span class="nav-icon">👥</span>
+          <span>客户管理</span>
+        </router-link>
+        <router-link to="/suppliers" class="nav-item" :class="{ active: $route.path === '/suppliers' }">
+          <span class="nav-icon">🏭</span>
+          <span>供应商管理</span>
+        </router-link>
         <router-link to="/materials" class="nav-item" :class="{ active: $route.path === '/materials' }">
           <span class="nav-icon">🧈</span>
           <span>原料管理</span>
         </router-link>
         <router-link to="/production/new" class="nav-item" :class="{ active: $route.path.includes('/production') }">
-          <span class="nav-icon">🏭</span>
+          <span class="nav-icon">⚙️</span>
           <span>生产管理</span>
         </router-link>
         <router-link to="/shipments/new" class="nav-item" :class="{ active: $route.path.includes('/shipments') }">
           <span class="nav-icon">🚚</span>
-          <span>发货管理</span>
+          <span>销售发货</span>
         </router-link>
       </nav>
       <div class="sidebar-footer">
         <div class="user-info">
-          <span>{{ userDisplay }}</span>
+          <span class="user-name">{{ userDisplay }}</span>
+          <el-tag size="small" type="warning" class="role-tag">{{ roleLabel }}</el-tag>
         </div>
-        <el-button size="small" @click="logout" text>退出登录</el-button>
+        <div class="footer-actions">
+          <el-button v-if="hasMultipleRoles" size="small" @click="switchRole" text style="color: rgba(255,255,255,0.8)">切换角色</el-button>
+          <el-button size="small" @click="logout" text style="color: rgba(255,255,255,0.8)">退出</el-button>
+        </div>
       </div>
     </aside>
 
@@ -49,6 +61,12 @@ import MobileNav from './MobileNav.vue'
 const router = useRouter()
 const isMobile = ref(false)
 const userDisplay = computed(() => localStorage.getItem('displayName') || '')
+const currentRole = computed(() => localStorage.getItem('currentRole') || '')
+const userRoles = computed(() => JSON.parse(localStorage.getItem('userRoles') || '[]'))
+const hasMultipleRoles = computed(() => userRoles.value.length > 1)
+
+const roleLabels = { boss: '老板', clerk: '内勤', leader: '班长' }
+const roleLabel = computed(() => roleLabels[currentRole.value] || currentRole.value)
 
 function checkMobile() {
   isMobile.value = window.innerWidth <= 768
@@ -57,7 +75,13 @@ function checkMobile() {
 function logout() {
   localStorage.removeItem('token')
   localStorage.removeItem('displayName')
+  localStorage.removeItem('currentRole')
+  localStorage.removeItem('userRoles')
   router.push('/login')
+}
+
+function switchRole() {
+  router.push('/select-role')
 }
 
 onMounted(() => {
@@ -101,6 +125,7 @@ onUnmounted(() => {
 .sidebar-nav {
   flex: 1;
   padding: 12px 0;
+  overflow-y: auto;
 }
 
 .nav-item {
@@ -127,14 +152,29 @@ onUnmounted(() => {
 .sidebar-footer {
   padding: 16px 20px;
   border-top: 1px solid rgba(255,255,255,0.15);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.user-name {
   color: rgba(255,255,255,0.9);
   font-size: 14px;
+}
+
+.role-tag {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+}
+
+.footer-actions {
+  display: flex;
+  gap: 4px;
 }
 
 .main-content {

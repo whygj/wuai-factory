@@ -6,12 +6,15 @@ from sqlalchemy import func
 from models import (
     User, RawMaterial, Product, InventoryTransaction,
     ProductionRecord, ShipmentRecord, OperationLog,
+    Customer, Supplier,
 )
 from schemas import (
     MaterialCreate, MaterialUpdate, InboundRequest,
     ProductCreate, ProductUpdate,
     ProductionCreate, MaterialUsage,
     ShipmentCreate, ShipmentStatusUpdate,
+    CustomerCreate, CustomerUpdate,
+    SupplierCreate, SupplierUpdate,
 )
 
 
@@ -56,7 +59,6 @@ def update_material(db: Session, material: RawMaterial, data: MaterialUpdate) ->
 
 
 def inbound_material(db: Session, material_id: int, data: InboundRequest, operator: str) -> RawMaterial:
-    """规则1: 原料入库 → raw_materials.current_stock += N → 写入 inventory_transactions 流水"""
     material = db.query(RawMaterial).filter(RawMaterial.id == material_id).with_for_update().first()
     if not material:
         raise ValueError("原料不存在")
@@ -135,16 +137,13 @@ def update_product(db: Session, product: Product, data: ProductUpdate) -> Produc
 # ==================== Production ====================
 
 def create_production(db: Session, data: ProductionCreate, operator: str) -> ProductionRecord:
-    """规则2: 生产登记 → 扣原料 + 增产品 + 写流水"""
     product = db.query(Product).filter(Product.id == data.product_id).with_for_update().first()
     if not product:
         raise ValueError("产品不存在")
 
-    # Parse and validate raw materials usage
     materials_used = data.raw_materials_used or []
     materials_json = json.dumps([m.model_dump() for m in materials_used], ensure_ascii=False)
 
-    # Deduct raw materials stock with FOR UPDATE lock
     for usage in materials_used:
         material = db.query(RawMaterial).filter(RawMaterial.id == usage.material_id).with_for_update().first()
         if not material:
@@ -154,7 +153,6 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
         material.current_stock -= usage.quantity
         material.updated_at = datetime.utcnow()
 
-        # Record outbound transaction for each material
         transaction = InventoryTransaction(
             transaction_type="out",
             raw_material_id=usage.material_id,
@@ -167,11 +165,9 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
         )
         db.add(transaction)
 
-    # Increase product stock
     product.current_stock += data.quantity
     product.updated_at = datetime.utcnow()
 
-    # Create production record
     record = ProductionRecord(
         date=data.date,
         product_id=data.product_id,
@@ -185,7 +181,6 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
     db.add(record)
     db.flush()
 
-    # Update related_id for inventory transactions
     db.query(InventoryTransaction).filter(
         InventoryTransaction.source == "production",
         InventoryTransaction.related_id == 0,
@@ -235,7 +230,6 @@ def get_production_record(db: Session, record_id: int):
 # ==================== Shipments ====================
 
 def create_shipment(db: Session, data: ShipmentCreate, operator: str) -> ShipmentRecord:
-    """规则3: 发货登记 → 扣产品库存 + 检查充足"""
     product = db.query(Product).filter(Product.id == data.product_id).with_for_update().first()
     if not product:
         raise ValueError("产品不存在")
@@ -298,6 +292,110 @@ def update_shipment_status(db: Session, record_id: int, data: ShipmentStatusUpda
     db.commit()
     db.refresh(record)
     return record
+
+
+# ==================== Customers ====================
+
+def get_customers(db: Session, search: str = "", type: str = "", page: int = 1, page_size: int = 50):
+    query = db.query(Customer)
+    if search:
+        query = query.filter(
+            (Customer.name.contains(search)) |
+            (Customer.contact.contains(search)) |
+            (Customer.phone.contains(search))
+        )
+    if type:
+        query = query.filter(Customer.type == type)
+    total = query.count()
+    items = query.order_by(Customer.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "items": items}
+
+
+def get_customer(db: Session, customer_id: int) -> Optional[Customer]:
+    return db.query(Customer).filter(Customer.id == customer_id).first()
+
+
+def create_customer(db: Session, data: CustomerCreate) -> Customer:
+    customer = Customer(**data.model_dump())
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    return customer
+
+
+def update_customer(db: Session, customer: Customer, data: CustomerUpdate) -> Customer:
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(customer, key, value)
+    customer.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(customer)
+    return customer
+
+
+def delete_customer(db: Session, customer_id: int) -> bool:
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        return False
+    db.delete(customer)
+    db.commit()
+    return True
+
+
+def get_customer_summary(db: Session, customer_id: int):
+    customer = get_customer(db, customer_id)
+    if not customer:
+        return None
+    return {
+        "customer": customer,
+        "total_orders": 0,
+        "total_amount": 0,
+        "last_order_date": None,
+    }
+
+
+# ==================== Suppliers ====================
+
+def get_suppliers(db: Session, search: str = "", page: int = 1, page_size: int = 50):
+    query = db.query(Supplier)
+    if search:
+        query = query.filter(
+            (Supplier.name.contains(search)) |
+            (Supplier.contact.contains(search)) |
+            (Supplier.phone.contains(search))
+        )
+    total = query.count()
+    items = query.order_by(Supplier.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "items": items}
+
+
+def get_supplier(db: Session, supplier_id: int) -> Optional[Supplier]:
+    return db.query(Supplier).filter(Supplier.id == supplier_id).first()
+
+
+def create_supplier(db: Session, data: SupplierCreate) -> Supplier:
+    supplier = Supplier(**data.model_dump())
+    db.add(supplier)
+    db.commit()
+    db.refresh(supplier)
+    return supplier
+
+
+def update_supplier(db: Session, supplier: Supplier, data: SupplierUpdate) -> Supplier:
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(supplier, key, value)
+    supplier.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(supplier)
+    return supplier
+
+
+def delete_supplier(db: Session, supplier_id: int) -> bool:
+    supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
+    if not supplier:
+        return False
+    db.delete(supplier)
+    db.commit()
+    return True
 
 
 # ==================== Dashboard ====================

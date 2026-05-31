@@ -7,10 +7,18 @@
       </div>
       <el-form :model="form" @submit.prevent="handleLogin" class="login-form">
         <el-form-item>
-          <el-input v-model="form.username" placeholder="用户名" size="large" prefix-icon="User" />
+          <el-input v-model="form.phone" type="tel" placeholder="请输入手机号" size="large" maxlength="11">
+            <template #prefix>
+              <span style="font-size: 18px;">📱</span>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item>
-          <el-input v-model="form.password" type="password" placeholder="密码" size="large" prefix-icon="Lock" show-password />
+          <el-input v-model="form.password" type="password" placeholder="密码" size="large" show-password>
+            <template #prefix>
+              <span style="font-size: 18px;">🔒</span>
+            </template>
+          </el-input>
         </el-form-item>
         <el-button type="primary" size="large" :loading="loading" @click="handleLogin" style="width: 100%; height: 48px; font-size: 18px;">
           登 录
@@ -23,26 +31,31 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { login, getMe } from '../api'
+import { loginPhone } from '../api'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const loading = ref(false)
-const form = ref({ username: '', password: '' })
+const form = ref({ phone: '', password: '' })
 
 async function handleLogin() {
-  if (!form.value.username || !form.value.password) {
-    ElMessage.warning('请输入用户名和密码')
+  if (!form.value.phone || !form.value.password) {
+    ElMessage.warning('请输入手机号和密码')
     return
   }
   loading.value = true
   try {
-    const res = await login(form.value)
+    const res = await loginPhone(form.value)
     localStorage.setItem('token', res.access_token)
-    const user = await getMe()
-    localStorage.setItem('displayName', user.display_name || user.username)
+    localStorage.setItem('displayName', res.display_name)
+    localStorage.setItem('userRoles', JSON.stringify(res.roles))
     ElMessage.success('登录成功')
-    router.push('/')
+    if (res.roles.length > 1) {
+      router.push('/select-role')
+    } else {
+      localStorage.setItem('currentRole', res.roles[0])
+      router.push('/')
+    }
   } catch (e) {
     // handled by interceptor
   } finally {

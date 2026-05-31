@@ -5,20 +5,33 @@ from datetime import date, datetime
 
 # Auth
 class LoginRequest(BaseModel):
+    phone: str
+    password: str
+
+
+class LoginUsernameRequest(BaseModel):
     username: str
     password: str
+
+
+class RoleSelectRequest(BaseModel):
+    role: str
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    roles: List[str] = []
+    display_name: str = ""
 
 
 class UserResponse(BaseModel):
     id: int
     username: str
+    phone: str
     display_name: Optional[str] = None
     role: str
+    roles: List[str] = []
 
     class Config:
         from_attributes = True
@@ -31,6 +44,8 @@ class MaterialCreate(BaseModel):
     unit: Optional[str] = None
     safety_stock: Optional[float] = 0
     supplier: Optional[str] = None
+    supplier_id: Optional[int] = None
+    purchase_price: Optional[float] = 0
     notes: Optional[str] = None
 
 
@@ -40,6 +55,8 @@ class MaterialUpdate(BaseModel):
     unit: Optional[str] = None
     safety_stock: Optional[float] = None
     supplier: Optional[str] = None
+    supplier_id: Optional[int] = None
+    purchase_price: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -51,6 +68,8 @@ class MaterialResponse(BaseModel):
     current_stock: float
     safety_stock: float
     supplier: Optional[str] = None
+    supplier_id: Optional[int] = None
+    purchase_price: Optional[float] = 0
     notes: Optional[str] = None
     updated_at: Optional[datetime] = None
 
@@ -176,6 +195,77 @@ class ShipmentResponse(BaseModel):
     operator: Optional[str] = None
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Customer
+class CustomerCreate(BaseModel):
+    name: str
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    type: Optional[str] = None
+    level: Optional[str] = "普通"
+    notes: Optional[str] = None
+
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    type: Optional[str] = None
+    level: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CustomerResponse(BaseModel):
+    id: int
+    name: str
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    type: Optional[str] = None
+    level: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Supplier
+class SupplierCreate(BaseModel):
+    name: str
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    category: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SupplierUpdate(BaseModel):
+    name: Optional[str] = None
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    category: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SupplierResponse(BaseModel):
+    id: int
+    name: str
+    contact: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    category: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

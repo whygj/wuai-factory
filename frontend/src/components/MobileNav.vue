@@ -2,14 +2,18 @@
   <nav class="mobile-nav">
     <router-link to="/" class="tab-item" :class="{ active: $route.path === '/' }">
       <span class="tab-icon">📊</span>
-      <span class="tab-label">仪表盘</span>
+      <span class="tab-label">首页</span>
     </router-link>
-    <router-link to="/materials" class="tab-item" :class="{ active: $route.path === '/materials' }">
-      <span class="tab-icon">🧈</span>
-      <span class="tab-label">原料</span>
+    <router-link to="/customers" class="tab-item" :class="{ active: $route.path === '/customers' }">
+      <span class="tab-icon">👥</span>
+      <span class="tab-label">客户</span>
+    </router-link>
+    <router-link to="/suppliers" class="tab-item" :class="{ active: $route.path === '/suppliers' }">
+      <span class="tab-icon">🏭</span>
+      <span class="tab-label">供应商</span>
     </router-link>
     <router-link to="/production/new" class="tab-item" :class="{ active: $route.path.includes('/production') }">
-      <span class="tab-icon">🏭</span>
+      <span class="tab-icon">⚙️</span>
       <span class="tab-label">生产</span>
     </router-link>
     <router-link to="/shipments/new" class="tab-item" :class="{ active: $route.path.includes('/shipments') }">
@@ -42,7 +46,7 @@
   text-decoration: none;
   color: var(--text-light);
   font-size: 12px;
-  padding: 8px 16px;
+  padding: 8px 12px;
   transition: color 0.2s;
 }
 
@@ -55,6 +59,6 @@
 }
 
 .tab-label {
-  font-size: 12px;
+  font-size: 11px;
 }
 </style>

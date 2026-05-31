@@ -7,10 +7,17 @@ const routes = [
     component: () => import('../views/Login.vue'),
   },
   {
+    path: '/select-role',
+    name: 'RoleSelect',
+    component: () => import('../views/RoleSelect.vue'),
+  },
+  {
     path: '/',
     component: () => import('../components/Layout.vue'),
     children: [
       { path: '', name: 'Dashboard', component: () => import('../views/Dashboard.vue') },
+      { path: 'customers', name: 'Customers', component: () => import('../views/Customers.vue') },
+      { path: 'suppliers', name: 'Suppliers', component: () => import('../views/Suppliers.vue') },
       { path: 'materials', name: 'Materials', component: () => import('../views/Materials.vue') },
       { path: 'production', name: 'ProductionList', component: () => import('../views/ProductionList.vue') },
       { path: 'production/new', name: 'ProductionNew', component: () => import('../views/ProductionNew.vue') },
@@ -27,9 +34,9 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
-  if (to.path !== '/login' && !token) {
+  if (to.path !== '/login' && to.path !== '/select-role' && !token) {
     next('/login')
-  } else if (to.path === '/login' && token) {
+  } else if ((to.path === '/login') && token) {
     next('/')
   } else {
     next()

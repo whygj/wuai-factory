@@ -7,11 +7,23 @@ def init_data():
     db = SessionLocal()
     try:
         # Create default users if not exist
-        if not db.query(User).filter(User.username == "admin").first():
+        if db.query(User).count() == 0:
             users = [
-                User(username="admin", password_hash=hash_password("admin123"), display_name="老板", role="boss"),
-                User(username="clerk", password_hash=hash_password("clerk123"), display_name="内勤", role="clerk"),
-                User(username="leader", password_hash=hash_password("leader123"), display_name="班长", role="leader"),
+                User(
+                    username="admin", phone="13800000001",
+                    password_hash=hash_password("admin123"),
+                    display_name="老板", role="boss", roles='["boss"]',
+                ),
+                User(
+                    username="clerk", phone="13800000002",
+                    password_hash=hash_password("clerk123"),
+                    display_name="内勤", role="clerk", roles='["clerk"]',
+                ),
+                User(
+                    username="leader", phone="13800000003",
+                    password_hash=hash_password("leader123"),
+                    display_name="班长", role="leader", roles='["leader"]',
+                ),
             ]
             db.add_all(users)
 

@@ -9,9 +9,11 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(Text, nullable=False, unique=True)
+    phone = Column(Text, unique=True, nullable=False)
     password_hash = Column(Text, nullable=False)
     display_name = Column(Text)
     role = Column(Text, nullable=False, default="clerk")
+    roles = Column(Text, nullable=False, default='["clerk"]')
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -25,6 +27,8 @@ class RawMaterial(Base):
     current_stock = Column(REAL, default=0)
     safety_stock = Column(REAL, default=0)
     supplier = Column(Text)
+    supplier_id = Column(Integer, nullable=True)
+    purchase_price = Column(REAL, default=0)
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -107,3 +111,32 @@ class OperationLog(Base):
     record_id = Column(Integer)
     detail = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(Text, nullable=False)
+    contact = Column(Text)
+    phone = Column(Text)
+    address = Column(Text)
+    type = Column(Text)
+    level = Column(Text, default="普通")
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Supplier(Base):
+    __tablename__ = "suppliers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(Text, nullable=False)
+    contact = Column(Text)
+    phone = Column(Text)
+    address = Column(Text)
+    category = Column(Text)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

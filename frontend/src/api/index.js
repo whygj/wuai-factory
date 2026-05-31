@@ -29,7 +29,9 @@ api.interceptors.response.use(
 )
 
 // Auth
-export const login = (data) => api.post('/auth/login', data)
+export const loginPhone = (data) => api.post('/auth/login', data)
+export const selectRoleApi = (data) => api.post('/auth/select-role', data)
+export const getRoles = () => api.get('/auth/roles')
 export const getMe = () => api.get('/auth/me')
 
 // Dashboard
@@ -57,9 +59,31 @@ export const getShipments = (params) => api.get('/shipments', { params })
 export const createShipment = (data) => api.post('/shipments', data)
 export const updateShipmentStatus = (id, data) => api.put(`/shipments/${id}/status`, data)
 
+// Customers
+export const getCustomers = (params) => api.get('/customers', { params })
+export const createCustomer = (data) => api.post('/customers', data)
+export const updateCustomer = (id, data) => api.put(`/customers/${id}`, data)
+export const deleteCustomer = (id) => api.delete(`/customers/${id}`)
+export const getCustomerSummary = (id) => api.get(`/customers/${id}/summary`)
+
+// Suppliers
+export const getSuppliers = (params) => api.get('/suppliers', { params })
+export const createSupplier = (data) => api.post('/suppliers', data)
+export const updateSupplier = (id, data) => api.put(`/suppliers/${id}`, data)
+export const deleteSupplier = (id) => api.delete(`/suppliers/${id}`)
+
 // Stats
 export const getMaterialDistribution = () => api.get('/stats/material-distribution')
 export const getProductRanking = () => api.get('/stats/product-ranking')
 export const getProductionTrend = (days = 7) => api.get('/stats/production-trend', { params: { days } })
+
+// Permission helper
+export function canEdit(module) {
+  const role = localStorage.getItem('currentRole')
+  if (role === 'boss') return true
+  if (role === 'clerk') return ['customer', 'supplier', 'purchase', 'inbound', 'production', 'sales', 'shipment', 'lab'].includes(module)
+  if (role === 'leader') return ['production', 'lab'].includes(module)
+  return false
+}
 
 export default api
