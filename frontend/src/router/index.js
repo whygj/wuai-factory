@@ -29,6 +29,7 @@ const routes = [
       { path: 'receivables', name: 'Receivables', component: () => import('../views/Receivables.vue') },
       { path: 'lab', name: 'LabRecords', component: () => import('../views/LabRecords.vue') },
       { path: 'reports', name: 'Reports', component: () => import('../views/Reports.vue') },
+      { path: 'users', name: 'Users', component: () => import('../views/UserManage.vue') },
     ],
   },
 ]

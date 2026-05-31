@@ -1,6 +1,5 @@
 from database import SessionLocal
 from models import User, RawMaterial, Product
-from auth import hash_password
 
 
 def init_data():
@@ -9,21 +8,9 @@ def init_data():
         # Create default users if not exist
         if db.query(User).count() == 0:
             users = [
-                User(
-                    username="admin", phone="13800000001",
-                    password_hash=hash_password("admin123"),
-                    display_name="老板", role="boss", roles='["boss"]',
-                ),
-                User(
-                    username="clerk", phone="13800000002",
-                    password_hash=hash_password("clerk123"),
-                    display_name="内勤", role="clerk", roles='["clerk"]',
-                ),
-                User(
-                    username="leader", phone="13800000003",
-                    password_hash=hash_password("leader123"),
-                    display_name="班长", role="leader", roles='["leader"]',
-                ),
+                User(phone="13800000001", display_name="老板", roles='["boss"]', status="approved"),
+                User(phone="13800000002", display_name="内勤", roles='["clerk"]', status="approved"),
+                User(phone="13800000003", display_name="班长", roles='["leader"]', status="approved"),
             ]
             db.add_all(users)
 

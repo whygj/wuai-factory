@@ -30,6 +30,49 @@ def log_operation(db: Session, user_name: str, action: str, table_name: str, rec
     db.add(log)
 
 
+# ==================== Users ====================
+
+def register_user(db: Session, phone: str, display_name: str, role: str) -> User:
+    user = User(
+        phone=phone,
+        display_name=display_name,
+        roles=json.dumps([role], ensure_ascii=False),
+        status="pending",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def approve_user(db: Session, user_id: int) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise ValueError("用户不存在")
+    user.status = "approved"
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def reject_user(db: Session, user_id: int) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise ValueError("用户不存在")
+    user.status = "rejected"
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def get_pending_users(db: Session):
+    return db.query(User).filter(User.status == "pending").order_by(User.id.desc()).all()
+
+
+def get_all_users(db: Session):
+    return db.query(User).order_by(User.id.desc()).all()
+
+
 # ==================== Materials ====================
 
 def get_materials(db: Session, search: str = "", page: int = 1, page_size: int = 50):

@@ -5,12 +5,13 @@ from sqlalchemy.orm import Session
 from database import get_db, init_db
 from init_data import init_data
 from auth import (
-    authenticate_user, create_access_token, get_current_user,
+    create_access_token, get_current_user,
     get_current_role, check_write_permission, ROLE_LABELS,
 )
 from models import User
 import crud
 import schemas
+import sms
 
 app = FastAPI(title="五爱食品工厂管理系统", version="2.1.0")
 
@@ -31,23 +32,63 @@ def startup():
 
 # ==================== Auth ====================
 
+@app.post("/api/auth/send-code")
+def send_code(req: schemas.SendCodeRequest):
+    if not req.phone or len(req.phone) != 11:
+        raise HTTPException(status_code=400, detail="请输入正确的手机号")
+    result = sms.send_verify_code(req.phone)
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result["msg"])
+    return {"msg": result["msg"]}
+
+
 @app.post("/api/auth/login", response_model=schemas.TokenResponse)
 def login(req: schemas.LoginRequest, db: Session = Depends(get_db)):
-    user = authenticate_user(db, req.phone, req.password)
+    v = sms.verify_code(req.phone, req.code)
+    if not v["ok"]:
+        raise HTTPException(status_code=401, detail=v["msg"])
+
+    user = db.query(User).filter(User.phone == req.phone).first()
     if not user:
-        raise HTTPException(status_code=401, detail="手机号或密码错误")
+        raise HTTPException(status_code=404, detail="用户未注册")
+
+    if user.status == "pending":
+        raise HTTPException(status_code=403, detail="账号待审核，请等待管理员通过")
+    if user.status == "rejected":
+        raise HTTPException(status_code=403, detail="账号未通过审核，请联系管理员")
+
     roles = json.loads(user.roles)
     current_role = roles[0] if roles else "clerk"
     token = create_access_token({
         "user_id": user.id,
         "sub": user.phone,
-        "role": user.role,
         "current_role": current_role,
     })
     return {
         "access_token": token,
         "roles": roles,
-        "display_name": user.display_name or user.username,
+        "display_name": user.display_name or user.phone,
+    }
+
+
+@app.post("/api/auth/register")
+def register(req: schemas.RegisterRequest, db: Session = Depends(get_db)):
+    v = sms.verify_code(req.phone, req.code)
+    if not v["ok"]:
+        raise HTTPException(status_code=401, detail=v["msg"])
+
+    existing = db.query(User).filter(User.phone == req.phone).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="该手机号已注册")
+
+    if req.role not in ("boss", "clerk", "leader"):
+        raise HTTPException(status_code=400, detail="无效的角色")
+
+    user = crud.register_user(db, req.phone, req.display_name, req.role)
+    return {
+        "msg": "注册成功，请等待管理员审核",
+        "status": "pending",
+        "user_id": user.id,
     }
 
 
@@ -68,13 +109,12 @@ def select_role(
     token = create_access_token({
         "user_id": current_user.id,
         "sub": current_user.phone,
-        "role": current_user.role,
         "current_role": req.role,
     })
     return {
         "access_token": token,
         "roles": roles,
-        "display_name": current_user.display_name or current_user.username,
+        "display_name": current_user.display_name or current_user.phone,
     }
 
 
@@ -83,12 +123,63 @@ def get_me(current_user: User = Depends(get_current_user)):
     roles = json.loads(current_user.roles)
     return {
         "id": current_user.id,
-        "username": current_user.username,
         "phone": current_user.phone,
         "display_name": current_user.display_name,
-        "role": current_user.role,
         "roles": roles,
+        "status": current_user.status,
     }
+
+
+# ==================== User Management ====================
+
+@app.get("/api/users/pending")
+def get_pending_users(current_user: User = Depends(get_current_user), current_role: str = Depends(get_current_role), db: Session = Depends(get_db)):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="无权限")
+    users = crud.get_pending_users(db)
+    result = []
+    for u in users:
+        result.append({
+            "id": u.id, "phone": u.phone, "display_name": u.display_name,
+            "roles": json.loads(u.roles), "status": u.status, "created_at": u.created_at,
+        })
+    return result
+
+
+@app.get("/api/users")
+def get_all_users(current_user: User = Depends(get_current_user), current_role: str = Depends(get_current_role), db: Session = Depends(get_db)):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="无权限")
+    users = crud.get_all_users(db)
+    result = []
+    for u in users:
+        result.append({
+            "id": u.id, "phone": u.phone, "display_name": u.display_name,
+            "roles": json.loads(u.roles), "status": u.status, "created_at": u.created_at,
+        })
+    return result
+
+
+@app.post("/api/users/{user_id}/approve")
+def approve_user(user_id: int, current_user: User = Depends(get_current_user), current_role: str = Depends(get_current_role), db: Session = Depends(get_db)):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        user = crud.approve_user(db, user_id)
+        return {"ok": True, "id": user.id, "status": user.status}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/users/{user_id}/reject")
+def reject_user(user_id: int, current_user: User = Depends(get_current_user), current_role: str = Depends(get_current_role), db: Session = Depends(get_db)):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        user = crud.reject_user(db, user_id)
+        return {"ok": True, "id": user.id, "status": user.status}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # ==================== Dashboard ====================
@@ -165,7 +256,7 @@ def inbound_material(
     if not check_write_permission(current_role, "inbound"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        return crud.inbound_material(db, material_id, data, current_user.username)
+        return crud.inbound_material(db, material_id, data, current_user.display_name or current_user.phone)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -246,7 +337,7 @@ def create_production(
     if not check_write_permission(current_role, "production"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        record = crud.create_production(db, data, current_user.username)
+        record = crud.create_production(db, data, current_user.display_name or current_user.phone)
         return crud.get_production_record(db, record.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -287,7 +378,7 @@ def create_shipment(
     if not check_write_permission(current_role, "shipment"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        record = crud.create_shipment(db, data, current_user.username)
+        record = crud.create_shipment(db, data, current_user.display_name or current_user.phone)
         db.refresh(record)
         return {
             "id": record.id, "date": record.date,
@@ -313,7 +404,7 @@ def update_shipment_status(
     if not check_write_permission(current_role, "shipment"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        record = crud.update_shipment_status(db, record_id, data, current_user.username)
+        record = crud.update_shipment_status(db, record_id, data, current_user.display_name or current_user.phone)
         return {
             "id": record.id, "status": record.status,
         }
@@ -499,7 +590,7 @@ def create_sales_order(
     if not check_write_permission(current_role, "sales"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        order = crud.create_sales_order(db, data, current_user.username)
+        order = crud.create_sales_order(db, data, current_user.display_name or current_user.phone)
         return crud.get_sales_order(db, order.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -536,7 +627,7 @@ def update_sales_order_status(
     if not check_write_permission(current_role, "sales"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        order = crud.update_sales_order_status(db, order_id, data, current_user.username)
+        order = crud.update_sales_order_status(db, order_id, data, current_user.display_name or current_user.phone)
         return {"id": order.id, "status": order.status}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -552,7 +643,7 @@ def ship_sales_order(
     if not check_write_permission(current_role, "sales"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        order = crud.ship_sales_order(db, order_id, current_user.username)
+        order = crud.ship_sales_order(db, order_id, current_user.display_name or current_user.phone)
         return {"id": order.id, "status": order.status}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -569,7 +660,7 @@ def record_payment(
     if not check_write_permission(current_role, "sales"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        order = crud.record_payment(db, order_id, data, current_user.username)
+        order = crud.record_payment(db, order_id, data, current_user.display_name or current_user.phone)
         return {"id": order.id, "payment_status": order.payment_status, "paid_amount": order.paid_amount}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -603,7 +694,7 @@ def create_purchase(
     if not check_write_permission(current_role, "purchase"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        order = crud.create_purchase_order(db, data, current_user.username)
+        order = crud.create_purchase_order(db, data, current_user.display_name or current_user.phone)
         return crud.get_purchase_order(db, order.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -632,7 +723,7 @@ def update_purchase_status(
     if not check_write_permission(current_role, "purchase"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        order = crud.update_purchase_status(db, order_id, data, current_user.username)
+        order = crud.update_purchase_status(db, order_id, data, current_user.display_name or current_user.phone)
         return {"id": order.id, "status": order.status}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -648,7 +739,7 @@ def confirm_purchase_inbound(
     if not check_write_permission(current_role, "purchase"):
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        order = crud.confirm_inbound(db, order_id, current_user.username)
+        order = crud.confirm_inbound(db, order_id, current_user.display_name or current_user.phone)
         return {"id": order.id, "status": order.status}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -708,7 +799,7 @@ def create_lab_record(
 ):
     if not check_write_permission(current_role, "lab"):
         raise HTTPException(status_code=403, detail="无权限")
-    return crud.create_lab_record(db, data, current_user.username)
+    return crud.create_lab_record(db, data, current_user.display_name or current_user.phone)
 
 
 @app.put("/api/lab/{record_id}", response_model=schemas.LabRecordResponse)

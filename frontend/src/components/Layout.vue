@@ -39,6 +39,10 @@
         <router-link to="/reports" class="nav-item" :class="{ active: $route.path === '/reports' }">
           <span class="nav-icon">📊</span><span>经营报表</span>
         </router-link>
+        <router-link v-if="currentRole === 'boss'" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
+          <span class="nav-icon">👥</span><span>用户管理</span>
+          <span v-if="pendingCount > 0" class="nav-badge">{{ pendingCount }}</span>
+        </router-link>
       </nav>
       <div class="sidebar-footer">
         <div class="user-info">
@@ -66,9 +70,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import MobileNav from './MobileNav.vue'
+import { getPendingUsersApi } from '../api'
 
 const router = useRouter()
 const isMobile = ref(false)
+const pendingCount = ref(0)
 const userDisplay = computed(() => localStorage.getItem('displayName') || '')
 const currentRole = computed(() => localStorage.getItem('currentRole') || '')
 const userRoles = computed(() => JSON.parse(localStorage.getItem('userRoles') || '[]'))
@@ -79,6 +85,17 @@ const roleLabel = computed(() => roleLabels[currentRole.value] || currentRole.va
 
 function checkMobile() {
   isMobile.value = window.innerWidth <= 768
+}
+
+async function loadPendingCount() {
+  if (currentRole.value === 'boss') {
+    try {
+      const users = await getPendingUsersApi()
+      pendingCount.value = users.length
+    } catch (e) {
+      pendingCount.value = 0
+    }
+  }
 }
 
 function logout() {
@@ -96,6 +113,7 @@ function switchRole() {
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  loadPendingCount()
 })
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
@@ -156,6 +174,17 @@ onUnmounted(() => {
 
 .nav-icon {
   font-size: 20px;
+}
+
+.nav-badge {
+  background: #f56c6c;
+  color: white;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: auto;
+  min-width: 18px;
+  text-align: center;
 }
 
 .sidebar-footer {

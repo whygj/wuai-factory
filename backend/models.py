@@ -8,12 +8,10 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    username = Column(Text, nullable=False, unique=True)
     phone = Column(Text, unique=True, nullable=False)
-    password_hash = Column(Text, nullable=False)
     display_name = Column(Text)
-    role = Column(Text, nullable=False, default="clerk")
     roles = Column(Text, nullable=False, default='["clerk"]')
+    status = Column(Text, default="approved")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

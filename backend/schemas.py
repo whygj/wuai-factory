@@ -4,14 +4,20 @@ from datetime import date, datetime
 
 
 # Auth
+class SendCodeRequest(BaseModel):
+    phone: str
+
+
 class LoginRequest(BaseModel):
     phone: str
-    password: str
+    code: str
 
 
-class LoginUsernameRequest(BaseModel):
-    username: str
-    password: str
+class RegisterRequest(BaseModel):
+    phone: str
+    code: str
+    display_name: str
+    role: str
 
 
 class RoleSelectRequest(BaseModel):
@@ -27,11 +33,10 @@ class TokenResponse(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    username: str
     phone: str
     display_name: Optional[str] = None
-    role: str
     roles: List[str] = []
+    status: str = "approved"
 
     class Config:
         from_attributes = True

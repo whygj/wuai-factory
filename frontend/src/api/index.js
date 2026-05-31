@@ -29,10 +29,18 @@ api.interceptors.response.use(
 )
 
 // Auth
-export const loginPhone = (data) => api.post('/auth/login', data)
+export const sendVerifyCode = (data) => api.post('/auth/send-code', data)
+export const loginWithCode = (data) => api.post('/auth/login', data)
+export const register = (data) => api.post('/auth/register', data)
 export const selectRoleApi = (data) => api.post('/auth/select-role', data)
 export const getRoles = () => api.get('/auth/roles')
 export const getMe = () => api.get('/auth/me')
+
+// User Management
+export const getPendingUsersApi = () => api.get('/users/pending')
+export const getAllUsersApi = () => api.get('/users')
+export const approveUserApi = (id) => api.post(`/users/${id}/approve`)
+export const rejectUserApi = (id) => api.post(`/users/${id}/reject`)
 
 // Dashboard
 export const getDashboard = () => api.get('/dashboard/overview')
