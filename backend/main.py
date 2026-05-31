@@ -442,9 +442,12 @@ def create_shipment(
         return {
             "id": record.id, "date": record.date,
             "customer_name": record.customer_name,
+            "customer_id": record.customer_id,
             "product_id": record.product_id,
             "quantity": record.quantity, "unit": record.unit,
             "unit_price": record.unit_price, "total_amount": record.total_amount,
+            "sales_order_id": record.sales_order_id,
+            "order_no": record.sales_order.order_no if record.sales_order else None,
             "status": record.status, "operator": record.operator,
             "notes": record.notes, "created_at": record.created_at,
         }
@@ -675,6 +678,15 @@ def get_sales_order(
     return order
 
 
+@app.get("/api/sales-orders/{order_id}/shipment-progress")
+def get_order_shipment_progress(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_order_shipment_progress(db, order_id)
+
+
 @app.put("/api/sales-orders/{order_id}/status")
 def update_sales_order_status(
     order_id: int,
@@ -687,22 +699,6 @@ def update_sales_order_status(
         raise HTTPException(status_code=403, detail="无权限")
     try:
         order = crud.update_sales_order_status(db, order_id, data, current_user.display_name or current_user.phone)
-        return {"id": order.id, "status": order.status}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.put("/api/sales-orders/{order_id}/ship")
-def ship_sales_order(
-    order_id: int,
-    current_user: User = Depends(get_current_user),
-    current_role: str = Depends(get_current_role),
-    db: Session = Depends(get_db),
-):
-    if not check_write_permission(current_role, "sales"):
-        raise HTTPException(status_code=403, detail="无权限")
-    try:
-        order = crud.ship_sales_order(db, order_id, current_user.display_name or current_user.phone)
         return {"id": order.id, "status": order.status}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

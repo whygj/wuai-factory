@@ -301,6 +301,28 @@ def create_shipment(db: Session, data: ShipmentCreate, operator: str) -> Shipmen
         if product.current_stock < data.quantity:
             raise ValueError(f"产品 {product.name} 库存不足（当前: {product.current_stock}，需要: {data.quantity}）")
 
+        if data.sales_order_id:
+            order = db.query(SalesOrder).filter(SalesOrder.id == data.sales_order_id).with_for_update().first()
+            if not order:
+                raise ValueError("销售订单不存在")
+            if order.status in ("已取消",):
+                raise ValueError("订单已取消，无法发货")
+            order_items = json.loads(order.items) if order.items else []
+            ordered_qty = 0
+            for oi in order_items:
+                if oi["product_id"] == data.product_id:
+                    ordered_qty = oi["quantity"]
+                    break
+            if ordered_qty == 0:
+                raise ValueError("该产品不在订单中")
+            already_shipped = db.query(func.coalesce(func.sum(ShipmentRecord.quantity), 0)).filter(
+                ShipmentRecord.sales_order_id == data.sales_order_id,
+                ShipmentRecord.product_id == data.product_id,
+            ).scalar()
+            remaining = ordered_qty - already_shipped
+            if data.quantity > remaining:
+                raise ValueError(f"发货数量超过订单剩余量（订单量: {ordered_qty}，已发: {already_shipped}，剩余: {remaining}）")
+
         product.current_stock -= data.quantity
         product.updated_at = datetime.utcnow()
 
@@ -309,24 +331,50 @@ def create_shipment(db: Session, data: ShipmentCreate, operator: str) -> Shipmen
         record = ShipmentRecord(
             date=data.date,
             customer_name=data.customer_name,
+            customer_id=data.customer_id,
             product_id=data.product_id,
             quantity=data.quantity,
             unit=data.unit or product.unit,
             unit_price=data.unit_price,
             total_amount=total_amount,
+            sales_order_id=data.sales_order_id,
             status="待发货",
             operator=operator,
             notes=data.notes,
         )
         db.add(record)
         db.flush()
+
+        if data.sales_order_id:
+            _update_order_shipment_status(db, data.sales_order_id)
+
         log_operation(db, operator, "发货登记", "shipment_records", record.id, f"发货 {product.name} {data.quantity}{data.unit or product.unit} 给 {data.customer_name}")
         db.commit()
         db.refresh(record)
         return record
-    except Exception as e:
+    except Exception:
         db.rollback()
         raise
+
+
+def _update_order_shipment_status(db: Session, order_id: int):
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        return
+    order_items = json.loads(order.items) if order.items else []
+    all_shipped = True
+    for oi in order_items:
+        shipped_qty = db.query(func.coalesce(func.sum(ShipmentRecord.quantity), 0)).filter(
+            ShipmentRecord.sales_order_id == order_id,
+            ShipmentRecord.product_id == oi["product_id"],
+        ).scalar()
+        if shipped_qty < oi["quantity"]:
+            all_shipped = False
+            break
+    if all_shipped:
+        order.status = "已发货"
+    else:
+        order.status = "部分发货"
 
 
 def get_shipments(db: Session, status: str = "", page: int = 1, page_size: int = 50):
@@ -339,9 +387,12 @@ def get_shipments(db: Session, status: str = "", page: int = 1, page_size: int =
     for s in items:
         d = {
             "id": s.id, "date": s.date, "customer_name": s.customer_name,
+            "customer_id": s.customer_id,
             "product_id": s.product_id, "product_name": s.product.name if s.product else "",
             "quantity": s.quantity, "unit": s.unit,
             "unit_price": s.unit_price, "total_amount": s.total_amount,
+            "sales_order_id": s.sales_order_id,
+            "order_no": s.sales_order.order_no if s.sales_order else None,
             "status": s.status, "operator": s.operator,
             "notes": s.notes, "created_at": s.created_at,
         }
@@ -357,6 +408,18 @@ def update_shipment_status(db: Session, record_id: int, data: ShipmentStatusUpda
         raise ValueError("无效状态")
     record.status = data.status
     log_operation(db, operator, f"发货状态更新为{data.status}", "shipment_records", record_id)
+
+    if data.status == "已签收" and record.sales_order_id:
+        order = db.query(SalesOrder).filter(SalesOrder.id == record.sales_order_id).first()
+        if order:
+            all_signed = not db.query(ShipmentRecord).filter(
+                ShipmentRecord.sales_order_id == record.sales_order_id,
+                ShipmentRecord.status != "已签收",
+            ).first()
+            if all_signed:
+                order.status = "已签收"
+                log_operation(db, operator, "销售订单已签收", "sales_orders", order.id)
+
     db.commit()
     db.refresh(record)
     return record
@@ -413,11 +476,33 @@ def get_customer_summary(db: Session, customer_id: int):
     customer = get_customer(db, customer_id)
     if not customer:
         return None
+
+    total_orders = db.query(func.count(SalesOrder.id)).filter(
+        SalesOrder.customer_id == customer_id,
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    total_amount = db.query(func.coalesce(func.sum(SalesOrder.total_amount), 0)).filter(
+        SalesOrder.customer_id == customer_id,
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    unpaid_amount = db.query(func.coalesce(func.sum(SalesOrder.total_amount - SalesOrder.paid_amount), 0)).filter(
+        SalesOrder.customer_id == customer_id,
+        SalesOrder.payment_status != "已付款",
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    last_order = db.query(SalesOrder).filter(
+        SalesOrder.customer_id == customer_id,
+    ).order_by(SalesOrder.date.desc()).first()
+
     return {
         "customer": customer,
-        "total_orders": 0,
-        "total_amount": 0,
-        "last_order_date": None,
+        "total_orders": total_orders,
+        "total_amount": total_amount,
+        "unpaid_amount": unpaid_amount,
+        "last_order_date": str(last_order.date) if last_order else None,
     }
 
 
@@ -558,6 +643,37 @@ def get_sales_order(db: Session, order_id: int):
     }
 
 
+def get_order_shipment_progress(db: Session, order_id: int):
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        return None
+    order_items = json.loads(order.items) if order.items else []
+    progress = []
+    for oi in order_items:
+        shipped = db.query(func.coalesce(func.sum(ShipmentRecord.quantity), 0)).filter(
+            ShipmentRecord.sales_order_id == order_id,
+            ShipmentRecord.product_id == oi["product_id"],
+        ).scalar()
+        progress.append({
+            "product_id": oi["product_id"],
+            "product_name": oi.get("product_name", ""),
+            "ordered_qty": oi["quantity"],
+            "shipped_qty": shipped,
+            "remaining_qty": oi["quantity"] - shipped,
+            "unit": oi.get("unit", ""),
+            "unit_price": oi.get("unit_price", 0),
+        })
+    shipments = db.query(ShipmentRecord).filter(
+        ShipmentRecord.sales_order_id == order_id,
+    ).order_by(ShipmentRecord.id.desc()).all()
+    shipment_list = [{
+        "id": s.id, "date": s.date, "product_id": s.product_id,
+        "quantity": s.quantity, "status": s.status,
+        "product_name": s.product.name if s.product else "",
+    } for s in shipments]
+    return {"progress": progress, "shipments": shipment_list}
+
+
 def update_sales_order_status(db: Session, order_id: int, data: SalesOrderStatusUpdate, operator: str) -> SalesOrder:
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
@@ -566,32 +682,6 @@ def update_sales_order_status(db: Session, order_id: int, data: SalesOrderStatus
         raise ValueError("无效状态")
     order.status = data.status
     log_operation(db, operator, f"销售订单状态更新为{data.status}", "sales_orders", order_id)
-    db.commit()
-    db.refresh(order)
-    return order
-
-
-def ship_sales_order(db: Session, order_id: int, operator: str) -> SalesOrder:
-    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).with_for_update().first()
-    if not order:
-        raise ValueError("订单不存在")
-    if order.status == "已发货":
-        raise ValueError("订单已发货")
-    if order.status == "已取消":
-        raise ValueError("订单已取消")
-
-    items = json.loads(order.items) if order.items else []
-    for item in items:
-        product = db.query(Product).filter(Product.id == item["product_id"]).with_for_update().first()
-        if not product:
-            raise ValueError(f"产品 {item.get('product_name', item['product_id'])} 不存在")
-        if product.current_stock < item["quantity"]:
-            raise ValueError(f"产品 {product.name} 库存不足（当前: {product.current_stock}，需要: {item['quantity']}）")
-        product.current_stock -= item["quantity"]
-        product.updated_at = datetime.utcnow()
-
-    order.status = "已发货"
-    log_operation(db, operator, "销售订单发货", "sales_orders", order_id, f"订单号 {order.order_no}，扣减 {len(items)} 种产品库存")
     db.commit()
     db.refresh(order)
     return order

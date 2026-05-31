@@ -197,10 +197,12 @@ class ProductionResponse(BaseModel):
 class ShipmentCreate(BaseModel):
     date: date
     customer_name: str
+    customer_id: Optional[int] = None
     product_id: int
     quantity: float
     unit: Optional[str] = None
     unit_price: Optional[float] = None
+    sales_order_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -212,12 +214,15 @@ class ShipmentResponse(BaseModel):
     id: int
     date: date
     customer_name: Optional[str] = None
+    customer_id: Optional[int] = None
     product_id: int
     product_name: Optional[str] = None
     quantity: float
     unit: Optional[str] = None
     unit_price: Optional[float] = None
     total_amount: Optional[float] = None
+    sales_order_id: Optional[int] = None
+    order_no: Optional[str] = None
     status: str
     operator: Optional[str] = None
     notes: Optional[str] = None

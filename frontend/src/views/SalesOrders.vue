@@ -42,10 +42,10 @@
         </template>
       </el-table-column>
       <el-table-column prop="operator" label="操作人" width="100" />
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="viewDetail(row)">明细</el-button>
-          <el-button v-if="canEdit('sales') && row.status === '待发货'" link type="success" @click="handleShip(row)">发货</el-button>
+          <el-button v-if="canEdit('sales') && (row.status === '待发货' || row.status === '部分发货')" link type="success" @click="handleShip(row)">发货</el-button>
           <el-button v-if="canEdit('sales') && row.payment_status !== '已付款' && row.status !== '已取消'" link type="warning" @click="openPaymentDialog(row)">回款</el-button>
           <el-button v-if="canEdit('sales') && row.status === '已发货'" link type="primary" @click="handleSign(row)">签收</el-button>
         </template>
@@ -68,7 +68,7 @@
         </div>
         <div class="card-actions">
           <el-button size="small" @click="viewDetail(item)">明细</el-button>
-          <el-button v-if="canEdit('sales') && item.status === '待发货'" size="small" type="success" @click="handleShip(item)">发货</el-button>
+          <el-button v-if="canEdit('sales') && (item.status === '待发货' || item.status === '部分发货')" size="small" type="success" @click="handleShip(item)">发货</el-button>
           <el-button v-if="canEdit('sales') && item.payment_status !== '已付款' && item.status !== '已取消'" size="small" type="warning" @click="openPaymentDialog(item)">回款</el-button>
           <el-button v-if="canEdit('sales') && item.status === '已发货'" size="small" type="primary" @click="handleSign(item)">签收</el-button>
         </div>
@@ -139,20 +139,32 @@
       </template>
     </el-dialog>
 
-    <!-- Detail Dialog -->
-    <el-dialog v-model="detailVisible" title="订单明细" :width="isMobile ? '90%' : '600px'" destroy-on-close>
+    <!-- Detail Dialog with shipment progress -->
+    <el-dialog v-model="detailVisible" title="订单明细" :width="isMobile ? '90%' : '700px'" destroy-on-close>
       <el-descriptions :column="2" border size="large" v-if="detailOrder">
         <el-descriptions-item label="订单号">{{ detailOrder.order_no }}</el-descriptions-item>
         <el-descriptions-item label="日期">{{ detailOrder.date }}</el-descriptions-item>
         <el-descriptions-item label="客户">{{ detailOrder.customer_name }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{ detailOrder.status }}</el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag :type="statusTagType(detailOrder.status)" size="small">{{ detailOrder.status }}</el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="付款状态">{{ detailOrder.payment_status }}</el-descriptions-item>
         <el-descriptions-item label="金额">¥{{ (detailOrder.total_amount || 0).toFixed(2) }}</el-descriptions-item>
       </el-descriptions>
       <el-table :data="detailItems" stripe size="large" style="margin-top: 16px;">
         <el-table-column prop="product_name" label="产品" />
-        <el-table-column prop="quantity" label="数量" width="100" />
+        <el-table-column prop="quantity" label="订单数量" width="100" />
         <el-table-column prop="unit" label="单位" width="80" />
+        <el-table-column label="已发数量" width="100" align="center">
+          <template #default="{ row }">
+            <span :style="{ color: row.shipped_qty >= row.quantity ? '#67C23A' : '#E65100' }">
+              {{ row.shipped_qty || 0 }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="剩余" width="80" align="center">
+          <template #default="{ row }">{{ row.remaining_qty || row.quantity - (row.shipped_qty || 0) }}</template>
+        </el-table-column>
         <el-table-column label="单价" width="100" align="right">
           <template #default="{ row }">¥{{ (row.unit_price || 0).toFixed(2) }}</template>
         </el-table-column>
@@ -162,18 +174,36 @@
           </template>
         </el-table-column>
       </el-table>
+      <div v-if="detailShipments.length > 0" style="margin-top: 16px;">
+        <h4 style="margin: 0 0 8px; font-size: 14px; color: #666;">发货记录</h4>
+        <el-table :data="detailShipments" stripe size="small">
+          <el-table-column prop="date" label="日期" width="110" />
+          <el-table-column prop="product_name" label="产品" />
+          <el-table-column prop="quantity" label="数量" width="80" />
+          <el-table-column prop="status" label="状态" width="80">
+            <template #default="{ row }">
+              <el-tag :type="row.status === '已签收' ? 'success' : row.status === '已发货' ? 'primary' : 'warning'" size="small">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div style="text-align: center; margin-top: 16px;" v-if="detailOrder && canEdit('sales') && (detailOrder.status === '待发货' || detailOrder.status === '部分发货')">
+        <el-button type="success" size="large" @click="goToShipment(detailOrder)">创建发货</el-button>
+      </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  getSalesOrders, createSalesOrder, shipSalesOrder, recordPayment,
-  updateSalesOrderStatus, getCustomers, getProducts, canEdit,
+  getSalesOrders, createSalesOrder, recordPayment,
+  updateSalesOrderStatus, getOrderShipmentProgress, getCustomers, getProducts, canEdit,
 } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+const router = useRouter()
 const isMobile = ref(window.innerWidth <= 768)
 window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
 
@@ -192,6 +222,7 @@ const customerList = ref([])
 const productList = ref([])
 const detailOrder = ref(null)
 const detailItems = ref([])
+const detailShipments = ref([])
 const paymentOrder = ref(null)
 
 const defaultForm = { date: new Date().toISOString().slice(0, 10), customer_id: '', items: [], notes: '' }
@@ -238,9 +269,6 @@ function addItem() {
 }
 
 function onProductChange(idx) {
-  const item = form.value.items[idx]
-  const product = productList.value.find(p => p.id === item.product_id)
-  if (product) item.unit_price = product.spec ? 0 : 0
   calcSubtotal(idx)
 }
 
@@ -270,11 +298,13 @@ async function handleSubmit() {
   }
 }
 
-async function handleShip(row) {
-  await ElMessageBox.confirm(`确认发货？将扣减产品库存。`, '确认发货', { type: 'warning' })
-  await shipSalesOrder(row.id)
-  ElMessage.success('发货成功，库存已扣减')
-  loadData()
+function handleShip(row) {
+  router.push({ path: '/shipments/new', query: { order_id: row.id } })
+}
+
+function goToShipment(order) {
+  detailVisible.value = false
+  router.push({ path: '/shipments/new', query: { order_id: order.id } })
 }
 
 function openPaymentDialog(row) {
@@ -306,12 +336,24 @@ async function handleSign(row) {
   loadData()
 }
 
-function viewDetail(row) {
+async function viewDetail(row) {
   detailOrder.value = row
   try {
-    detailItems.value = JSON.parse(row.items || '[]')
+    const baseItems = JSON.parse(row.items || '[]')
+    const progressRes = await getOrderShipmentProgress(row.id)
+    const progressMap = {}
+    for (const p of (progressRes.progress || [])) {
+      progressMap[p.product_id] = p
+    }
+    detailItems.value = baseItems.map(item => ({
+      ...item,
+      shipped_qty: progressMap[item.product_id]?.shipped_qty || 0,
+      remaining_qty: progressMap[item.product_id]?.remaining_qty || item.quantity,
+    }))
+    detailShipments.value = progressRes.shipments || []
   } catch {
-    detailItems.value = []
+    detailItems.value = JSON.parse(row.items || '[]')
+    detailShipments.value = []
   }
   detailVisible.value = true
 }

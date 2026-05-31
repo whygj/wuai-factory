@@ -34,8 +34,9 @@
         </template>
       </el-table-column>
       <el-table-column prop="address" label="地址" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
+          <el-button link type="info" @click="viewSummary(row)">统计</el-button>
           <el-button v-if="canEdit('customer')" link type="primary" @click="openDialog(row)">编辑</el-button>
           <el-button v-if="currentRole === 'boss'" link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
@@ -56,6 +57,7 @@
           <span v-if="item.phone">{{ item.phone }}</span>
         </div>
         <div class="card-actions">
+          <el-button size="small" @click="viewSummary(item)">统计</el-button>
           <el-button v-if="canEdit('customer')" size="small" type="primary" @click="openDialog(item)">编辑</el-button>
           <el-button v-if="currentRole === 'boss'" size="small" type="danger" @click="handleDelete(item)">删除</el-button>
         </div>
@@ -73,6 +75,7 @@
       />
     </div>
 
+    <!-- Edit Dialog -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑客户' : '新增客户'" :width="isMobile ? '90%' : '500px'" destroy-on-close>
       <el-form :model="form" label-width="80px" size="large">
         <el-form-item label="客户名称" required>
@@ -110,12 +113,28 @@
         <el-button type="primary" @click="handleSubmit" :loading="submitting" size="large">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- Summary Dialog -->
+    <el-dialog v-model="summaryVisible" :title="`客户统计 - ${summaryData?.customer?.name || ''}`" :width="isMobile ? '90%' : '500px'" destroy-on-close>
+      <el-descriptions :column="2" border size="large" v-if="summaryData">
+        <el-descriptions-item label="累计订单">{{ summaryData.total_orders }} 单</el-descriptions-item>
+        <el-descriptions-item label="累计金额">
+          <span style="color: #E65100; font-weight: 600;">¥{{ (summaryData.total_amount || 0).toFixed(2) }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="未付金额">
+          <span :style="{ color: summaryData.unpaid_amount > 0 ? '#F56C6C' : '#67C23A', fontWeight: 600 }">
+            ¥{{ (summaryData.unpaid_amount || 0).toFixed(2) }}
+          </span>
+        </el-descriptions-item>
+        <el-descriptions-item label="最近交易">{{ summaryData.last_order_date || '暂无' }}</el-descriptions-item>
+      </el-descriptions>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { getCustomers, createCustomer, updateCustomer, deleteCustomer, canEdit } from '../api'
+import { getCustomers, createCustomer, updateCustomer, deleteCustomer, getCustomerSummary, canEdit } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const isMobile = ref(window.innerWidth <= 768)
@@ -128,9 +147,11 @@ const pageSize = 50
 const search = ref('')
 const typeFilter = ref('')
 const dialogVisible = ref(false)
+const summaryVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
 const submitting = ref(false)
+const summaryData = ref(null)
 
 const currentRole = computed(() => localStorage.getItem('currentRole') || '')
 
@@ -154,6 +175,14 @@ function openDialog(row) {
     form.value = { ...defaultForm }
   }
   dialogVisible.value = true
+}
+
+async function viewSummary(row) {
+  try {
+    const res = await getCustomerSummary(row.id)
+    summaryData.value = res
+    summaryVisible.value = true
+  } catch (e) {}
 }
 
 async function handleSubmit() {

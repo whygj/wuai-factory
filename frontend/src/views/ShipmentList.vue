@@ -14,9 +14,15 @@
 
     <el-card>
       <el-table :data="records" stripe style="width: 100%" class="hidden-mobile">
-        <el-table-column prop="date" label="日期" width="120" />
-        <el-table-column prop="customer_name" label="客户" min-width="120" />
-        <el-table-column prop="product_name" label="产品" min-width="140" />
+        <el-table-column prop="date" label="日期" width="110" />
+        <el-table-column prop="customer_name" label="客户" min-width="110" />
+        <el-table-column label="关联订单" width="150">
+          <template #default="{ row }">
+            <span v-if="row.order_no" class="order-link" @click="goToOrder(row.sales_order_id)">{{ row.order_no }}</span>
+            <span v-else style="color: #999;">独立发货</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="product_name" label="产品" min-width="120" />
         <el-table-column prop="quantity" label="数量" width="100">
           <template #default="{ row }">{{ row.quantity }} {{ row.unit }}</template>
         </el-table-column>
@@ -54,6 +60,9 @@
             <span>{{ item.quantity }} {{ item.unit }}</span>
             <span v-if="item.total_amount">¥{{ item.total_amount.toFixed(2) }}</span>
           </div>
+          <div class="card-info" v-if="item.order_no">
+            <span style="color: #E65100;">关联: <span class="order-link" @click="goToOrder(item.sales_order_id)">{{ item.order_no }}</span></span>
+          </div>
           <div class="card-actions">
             <el-button v-if="item.status === '待发货'" size="small" type="primary" @click="updateStatus(item.id, '已发货')">发货</el-button>
             <el-button v-if="item.status === '已发货'" size="small" type="success" @click="updateStatus(item.id, '已签收')">签收</el-button>
@@ -66,9 +75,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { getShipments, updateShipmentStatus } from '../api'
 import { ElMessage } from 'element-plus'
 
+const router = useRouter()
 const records = ref([])
 const statusFilter = ref('')
 
@@ -94,6 +105,12 @@ async function updateStatus(id, status) {
   } catch (e) {}
 }
 
+function goToOrder(orderId) {
+  if (orderId) {
+    router.push('/sales-orders')
+  }
+}
+
 onMounted(loadRecords)
 </script>
 
@@ -117,6 +134,12 @@ onMounted(loadRecords)
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.order-link {
+  color: #E65100;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .visible-mobile { display: none; }

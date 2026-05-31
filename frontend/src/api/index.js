@@ -82,7 +82,7 @@ export const getSalesOrders = (params) => api.get('/sales-orders', { params })
 export const createSalesOrder = (data) => api.post('/sales-orders', data)
 export const getSalesOrder = (id) => api.get(`/sales-orders/${id}`)
 export const updateSalesOrderStatus = (id, data) => api.put(`/sales-orders/${id}/status`, data)
-export const shipSalesOrder = (id) => api.put(`/sales-orders/${id}/ship`)
+export const getOrderShipmentProgress = (id) => api.get(`/sales-orders/${id}/shipment-progress`)
 export const recordPayment = (id, data) => api.put(`/sales-orders/${id}/payment`, data)
 export const getSalesStats = () => api.get('/sales-orders/stats')
 

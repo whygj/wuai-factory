@@ -86,17 +86,21 @@ class ShipmentRecord(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     date = Column(Date, nullable=False)
     customer_name = Column(Text)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     quantity = Column(REAL, nullable=False)
     unit = Column(Text)
     unit_price = Column(REAL)
     total_amount = Column(REAL)
+    sales_order_id = Column(Integer, ForeignKey("sales_orders.id"), nullable=True)
     status = Column(Text, default="待发货")
     operator = Column(Text)
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     product = relationship("Product")
+    sales_order = relationship("SalesOrder")
+    customer_rel = relationship("Customer")
 
 
 class OperationLog(Base):
