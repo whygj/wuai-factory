@@ -182,6 +182,22 @@ def reject_user(user_id: int, current_user: User = Depends(get_current_user), cu
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/api/operation-logs")
+def list_operation_logs(
+    table_name: str = Query(""),
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    page: int = Query(1),
+    page_size: int = Query(50),
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="无权限")
+    return crud.get_operation_logs(db, table_name=table_name, start_date=start_date, end_date=end_date, page=page, page_size=page_size)
+
+
 # ==================== Dashboard ====================
 
 @app.get("/api/dashboard/overview")

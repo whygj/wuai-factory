@@ -1,16 +1,31 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import date, datetime
+import re
 
 
 # Auth
 class SendCodeRequest(BaseModel):
     phone: str
 
+    @field_validator("phone")
+    @classmethod
+    def validate_phone_number(cls, v):
+        if not re.match(r"^1[3-9]\d{9}$", v):
+            raise ValueError("手机号格式不正确")
+        return v
+
 
 class LoginRequest(BaseModel):
     phone: str
     code: str
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone_number(cls, v):
+        if not re.match(r"^1[3-9]\d{9}$", v):
+            raise ValueError("手机号格式不正确")
+        return v
 
 
 class RegisterRequest(BaseModel):
@@ -18,6 +33,13 @@ class RegisterRequest(BaseModel):
     code: str
     display_name: str
     role: str
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone_number(cls, v):
+        if not re.match(r"^1[3-9]\d{9}$", v):
+            raise ValueError("手机号格式不正确")
+        return v
 
 
 class RoleSelectRequest(BaseModel):

@@ -30,6 +30,19 @@ def log_operation(db: Session, user_name: str, action: str, table_name: str, rec
     db.add(log)
 
 
+def get_operation_logs(db: Session, table_name: str = "", start_date: str = "", end_date: str = "", page: int = 1, page_size: int = 50):
+    query = db.query(OperationLog)
+    if table_name:
+        query = query.filter(OperationLog.table_name == table_name)
+    if start_date:
+        query = query.filter(OperationLog.created_at >= start_date)
+    if end_date:
+        query = query.filter(OperationLog.created_at <= end_date)
+    total = query.count()
+    items = query.order_by(OperationLog.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "items": items}
+
+
 # ==================== Users ====================
 
 def register_user(db: Session, phone: str, display_name: str, role: str) -> User:
@@ -184,60 +197,64 @@ def update_product(db: Session, product: Product, data: ProductUpdate) -> Produc
 # ==================== Production ====================
 
 def create_production(db: Session, data: ProductionCreate, operator: str) -> ProductionRecord:
-    product = db.query(Product).filter(Product.id == data.product_id).with_for_update().first()
-    if not product:
-        raise ValueError("产品不存在")
+    try:
+        product = db.query(Product).filter(Product.id == data.product_id).with_for_update().first()
+        if not product:
+            raise ValueError("产品不存在")
 
-    materials_used = data.raw_materials_used or []
-    materials_json = json.dumps([m.model_dump() for m in materials_used], ensure_ascii=False)
+        materials_used = data.raw_materials_used or []
+        materials_json = json.dumps([m.model_dump() for m in materials_used], ensure_ascii=False)
 
-    for usage in materials_used:
-        material = db.query(RawMaterial).filter(RawMaterial.id == usage.material_id).with_for_update().first()
-        if not material:
-            raise ValueError(f"原料ID {usage.material_id} 不存在")
-        if material.current_stock < usage.quantity:
-            raise ValueError(f"原料 {material.name} 库存不足（当前: {material.current_stock}，需要: {usage.quantity}）")
-        material.current_stock -= usage.quantity
-        material.updated_at = datetime.utcnow()
+        for usage in materials_used:
+            material = db.query(RawMaterial).filter(RawMaterial.id == usage.material_id).with_for_update().first()
+            if not material:
+                raise ValueError(f"原料ID {usage.material_id} 不存在")
+            if material.current_stock < usage.quantity:
+                raise ValueError(f"原料 {material.name} 库存不足（当前: {material.current_stock}，需要: {usage.quantity}）")
+            material.current_stock -= usage.quantity
+            material.updated_at = datetime.utcnow()
 
-        transaction = InventoryTransaction(
-            transaction_type="out",
-            raw_material_id=usage.material_id,
-            quantity=usage.quantity,
-            unit=usage.unit or material.unit,
-            source="production",
-            related_id=0,
+            transaction = InventoryTransaction(
+                transaction_type="out",
+                raw_material_id=usage.material_id,
+                quantity=usage.quantity,
+                unit=usage.unit or material.unit,
+                source="production",
+                related_id=0,
+                operator=operator,
+                notes="生产消耗",
+            )
+            db.add(transaction)
+
+        product.current_stock += data.quantity
+        product.updated_at = datetime.utcnow()
+
+        record = ProductionRecord(
+            date=data.date,
+            product_id=data.product_id,
+            quantity=data.quantity,
+            unit=data.unit or product.unit,
+            sugar_degree=data.sugar_degree,
+            raw_materials_used=materials_json,
             operator=operator,
-            notes="生产消耗",
+            notes=data.notes,
         )
-        db.add(transaction)
+        db.add(record)
+        db.flush()
 
-    product.current_stock += data.quantity
-    product.updated_at = datetime.utcnow()
+        db.query(InventoryTransaction).filter(
+            InventoryTransaction.source == "production",
+            InventoryTransaction.related_id == 0,
+            InventoryTransaction.operator == operator,
+        ).update({"related_id": record.id})
 
-    record = ProductionRecord(
-        date=data.date,
-        product_id=data.product_id,
-        quantity=data.quantity,
-        unit=data.unit or product.unit,
-        sugar_degree=data.sugar_degree,
-        raw_materials_used=materials_json,
-        operator=operator,
-        notes=data.notes,
-    )
-    db.add(record)
-    db.flush()
-
-    db.query(InventoryTransaction).filter(
-        InventoryTransaction.source == "production",
-        InventoryTransaction.related_id == 0,
-        InventoryTransaction.operator == operator,
-    ).update({"related_id": record.id})
-
-    log_operation(db, operator, "生产登记", "production_records", record.id, f"生产 {product.name} {data.quantity}{data.unit or product.unit}")
-    db.commit()
-    db.refresh(record)
-    return record
+        log_operation(db, operator, "生产登记", "production_records", record.id, f"生产 {product.name} {data.quantity}{data.unit or product.unit}")
+        db.commit()
+        db.refresh(record)
+        return record
+    except Exception as e:
+        db.rollback()
+        raise
 
 
 def get_production_records(db: Session, start_date: str = "", end_date: str = "", page: int = 1, page_size: int = 50):
@@ -277,35 +294,39 @@ def get_production_record(db: Session, record_id: int):
 # ==================== Shipments ====================
 
 def create_shipment(db: Session, data: ShipmentCreate, operator: str) -> ShipmentRecord:
-    product = db.query(Product).filter(Product.id == data.product_id).with_for_update().first()
-    if not product:
-        raise ValueError("产品不存在")
-    if product.current_stock < data.quantity:
-        raise ValueError(f"产品 {product.name} 库存不足（当前: {product.current_stock}，需要: {data.quantity}）")
+    try:
+        product = db.query(Product).filter(Product.id == data.product_id).with_for_update().first()
+        if not product:
+            raise ValueError("产品不存在")
+        if product.current_stock < data.quantity:
+            raise ValueError(f"产品 {product.name} 库存不足（当前: {product.current_stock}，需要: {data.quantity}）")
 
-    product.current_stock -= data.quantity
-    product.updated_at = datetime.utcnow()
+        product.current_stock -= data.quantity
+        product.updated_at = datetime.utcnow()
 
-    total_amount = data.quantity * data.unit_price if data.unit_price else 0
+        total_amount = data.quantity * data.unit_price if data.unit_price else 0
 
-    record = ShipmentRecord(
-        date=data.date,
-        customer_name=data.customer_name,
-        product_id=data.product_id,
-        quantity=data.quantity,
-        unit=data.unit or product.unit,
-        unit_price=data.unit_price,
-        total_amount=total_amount,
-        status="待发货",
-        operator=operator,
-        notes=data.notes,
-    )
-    db.add(record)
-    db.flush()
-    log_operation(db, operator, "发货登记", "shipment_records", record.id, f"发货 {product.name} {data.quantity}{data.unit or product.unit} 给 {data.customer_name}")
-    db.commit()
-    db.refresh(record)
-    return record
+        record = ShipmentRecord(
+            date=data.date,
+            customer_name=data.customer_name,
+            product_id=data.product_id,
+            quantity=data.quantity,
+            unit=data.unit or product.unit,
+            unit_price=data.unit_price,
+            total_amount=total_amount,
+            status="待发货",
+            operator=operator,
+            notes=data.notes,
+        )
+        db.add(record)
+        db.flush()
+        log_operation(db, operator, "发货登记", "shipment_records", record.id, f"发货 {product.name} {data.quantity}{data.unit or product.unit} 给 {data.customer_name}")
+        db.commit()
+        db.refresh(record)
+        return record
+    except Exception as e:
+        db.rollback()
+        raise
 
 
 def get_shipments(db: Session, status: str = "", page: int = 1, page_size: int = 50):
