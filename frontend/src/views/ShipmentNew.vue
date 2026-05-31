@@ -121,4 +121,9 @@ onMounted(async () => {
   padding-top: 16px;
   border-top: 1px solid var(--border);
 }
+@media (max-width: 768px) {
+  .shipment-new-page { padding: 8px; }
+  :deep(.el-form-item__label) { font-size: 13px; }
+  .form-actions .el-button { width: 100%; min-width: auto !important; }
+}
 </style>

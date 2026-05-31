@@ -101,7 +101,7 @@
     </el-tabs>
 
     <!-- Payment Dialog -->
-    <el-dialog v-model="paymentDialogVisible" title="登记回款" width="400px" destroy-on-close>
+    <el-dialog v-model="paymentDialogVisible" title="登记回款" :width="isMobile ? '90%' : '400px'" destroy-on-close>
       <el-form :model="paymentForm" label-width="80px" size="large">
         <el-form-item label="订单号">
           <span>{{ paymentOrder?.order_no }}</span>
@@ -133,6 +133,9 @@ import {
   getReceivables, getOverdueReceivables, getReceivablesSummary, recordPayment, canEdit,
 } from '../api'
 import { ElMessage } from 'element-plus'
+
+const isMobile = ref(window.innerWidth <= 768)
+window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
 
 const activeTab = ref('list')
 const receivables = ref([])
@@ -218,8 +221,13 @@ onMounted(loadData)
   margin-top: 4px;
 }
 @media (max-width: 768px) {
+  .page { padding: 8px; }
   .stats-cards {
     flex-direction: column;
   }
+  :deep(.el-table) { font-size: 13px; }
+  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
+  :deep(.el-form-item__label) { font-size: 13px; }
+  :deep(.el-dialog) { margin: 8px auto; }
 }
 </style>

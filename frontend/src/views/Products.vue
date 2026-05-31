@@ -43,4 +43,10 @@ onMounted(load)
 .page-title { font-size: 24px; font-weight: 700; color: var(--primary); margin-bottom: 16px; }
 .toolbar { margin-bottom: 16px; }
 .low-stock { color: #F44336; font-weight: 700; }
+@media (max-width: 768px) {
+  .page { padding: 8px; }
+  .toolbar .el-input { max-width: 100% !important; }
+  :deep(.el-table) { font-size: 13px; }
+  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
+}
 </style>

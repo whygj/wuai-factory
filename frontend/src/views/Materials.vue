@@ -33,7 +33,7 @@
     </el-card>
 
     <!-- Add Material Dialog -->
-    <el-dialog v-model="addDialogVisible" title="新增原料" width="500px">
+    <el-dialog v-model="addDialogVisible" title="新增原料" :width="isMobile ? '90%' : '500px'">
       <el-form :model="addForm" label-width="80px">
         <el-form-item label="名称">
           <el-input v-model="addForm.name" placeholder="原料名称" />
@@ -62,7 +62,7 @@
     </el-dialog>
 
     <!-- Inbound Dialog -->
-    <el-dialog v-model="inboundDialogVisible" :title="`入库 - ${currentMaterial?.name || ''}`" width="500px">
+    <el-dialog v-model="inboundDialogVisible" :title="`入库 - ${currentMaterial?.name || ''}`" :width="isMobile ? '90%' : '500px'">
       <el-form :model="inboundForm" label-width="80px">
         <el-form-item label="入库数量">
           <el-input-number v-model="inboundForm.quantity" :min="0.01" :precision="2" style="width: 100%" />
@@ -83,6 +83,9 @@
 import { ref, onMounted } from 'vue'
 import { getMaterials, createMaterial, inboundMaterial } from '../api'
 import { ElMessage } from 'element-plus'
+
+const isMobile = ref(window.innerWidth <= 768)
+window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
 
 const search = ref('')
 const materials = ref([])
@@ -174,6 +177,7 @@ onMounted(loadMaterials)
 }
 
 @media (max-width: 768px) {
+  .page { padding: 8px; }
   .page-header {
     flex-direction: column;
     align-items: stretch;
@@ -181,5 +185,10 @@ onMounted(loadMaterials)
   .page-actions {
     flex-direction: column;
   }
+  .page-actions .el-input { width: 100% !important; }
+  :deep(.el-table) { font-size: 13px; }
+  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
+  :deep(.el-form-item__label) { font-size: 13px; }
+  :deep(.el-dialog) { margin: 8px auto; }
 }
 </style>

@@ -42,7 +42,7 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑试验' : '新增试验'" width="560px">
+    <el-dialog v-model="dialogVisible" :title="editing ? '编辑试验' : '新增试验'" :width="isMobile ? '90%' : '560px'">
       <el-form :model="form" label-width="90px" size="large">
         <el-form-item label="日期" required>
           <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" style="width:100%" />
@@ -82,6 +82,9 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getLabRecords, createLabRecord, updateLabRecord, canEdit } from '../api'
+
+const isMobile = ref(window.innerWidth <= 768)
+window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
 
 const records = ref([])
 const total = ref(0)
@@ -153,4 +156,13 @@ onMounted(load)
 .score { font-weight: 700; color: var(--primary); }
 .no-score { color: #ccc; }
 .pagination { margin-top: 16px; display: flex; justify-content: center; }
+@media (max-width: 768px) {
+  .page { padding: 8px; }
+  .page-header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .filters .el-select { width: 100%; }
+  :deep(.el-table) { font-size: 13px; }
+  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
+  :deep(.el-form-item__label) { font-size: 13px; }
+  :deep(.el-dialog) { margin: 8px auto; }
+}
 </style>

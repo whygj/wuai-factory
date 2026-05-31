@@ -53,7 +53,7 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑客户' : '新增客户'" width="500px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑客户' : '新增客户'" :width="isMobile ? '90%' : '500px'" destroy-on-close>
       <el-form :model="form" label-width="80px" size="large">
         <el-form-item label="客户名称" required>
           <el-input v-model="form.name" placeholder="请输入客户名称" />
@@ -97,6 +97,9 @@
 import { ref, onMounted, computed } from 'vue'
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer, canEdit } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+
+const isMobile = ref(window.innerWidth <= 768)
+window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
 
 const customers = ref([])
 const total = ref(0)
@@ -183,5 +186,15 @@ onMounted(loadData)
   display: flex;
   justify-content: center;
   margin-top: 20px;
+}
+@media (max-width: 768px) {
+  .page { padding: 8px; }
+  .page-header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .filter-bar { flex-direction: column; }
+  .filter-bar .el-input, .filter-bar .el-select { width: 100% !important; }
+  :deep(.el-table) { font-size: 13px; }
+  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
+  :deep(.el-form-item__label) { font-size: 13px; }
+  :deep(.el-dialog) { margin: 8px auto; }
 }
 </style>

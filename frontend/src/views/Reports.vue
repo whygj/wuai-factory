@@ -182,4 +182,12 @@ onMounted(() => { loadSales() })
 .kpi-row .el-col { margin-bottom: 12px; }
 .chart-card { margin-bottom: 16px; }
 .card-title { font-size: 15px; font-weight: 600; }
+@media (max-width: 768px) {
+  .page { padding: 8px; }
+  .tab-toolbar { display: flex; flex-wrap: wrap; }
+  .tab-toolbar .el-date-editor { width: 100% !important; }
+  :deep(.el-table) { font-size: 13px; }
+  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
+  :deep(.el-tabs__item) { font-size: 14px; padding: 0 8px; }
+}
 </style>

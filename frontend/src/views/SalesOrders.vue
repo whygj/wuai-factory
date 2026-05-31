@@ -57,7 +57,7 @@
     </div>
 
     <!-- New/Edit Order Dialog -->
-    <el-dialog v-model="dialogVisible" title="新增销售订单" width="650px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" title="新增销售订单" :width="isMobile ? '90%' : '650px'" destroy-on-close>
       <el-form :model="form" label-width="90px" size="large">
         <el-form-item label="日期" required>
           <el-date-picker v-model="form.date" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width: 100%;" />
@@ -95,7 +95,7 @@
     </el-dialog>
 
     <!-- Payment Dialog -->
-    <el-dialog v-model="paymentDialogVisible" title="登记回款" width="400px" destroy-on-close>
+    <el-dialog v-model="paymentDialogVisible" title="登记回款" :width="isMobile ? '90%' : '400px'" destroy-on-close>
       <el-form :model="paymentForm" label-width="80px" size="large">
         <el-form-item label="订单号">
           <span>{{ paymentOrder?.order_no }}</span>
@@ -117,7 +117,7 @@
     </el-dialog>
 
     <!-- Detail Dialog -->
-    <el-dialog v-model="detailVisible" title="订单明细" width="600px" destroy-on-close>
+    <el-dialog v-model="detailVisible" title="订单明细" :width="isMobile ? '90%' : '600px'" destroy-on-close>
       <el-descriptions :column="2" border size="large" v-if="detailOrder">
         <el-descriptions-item label="订单号">{{ detailOrder.order_no }}</el-descriptions-item>
         <el-descriptions-item label="日期">{{ detailOrder.date }}</el-descriptions-item>
@@ -150,6 +150,9 @@ import {
   updateSalesOrderStatus, getCustomers, getProducts, canEdit,
 } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+
+const isMobile = ref(window.innerWidth <= 768)
+window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
 
 const orders = ref([])
 const total = ref(0)
@@ -324,5 +327,17 @@ onMounted(() => { loadData(); loadOptions() })
   text-align: right;
   font-weight: 600;
   color: #E65100;
+}
+@media (max-width: 768px) {
+  .page { padding: 8px; }
+  .page-header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .filter-bar { flex-direction: column; }
+  .filter-bar .el-input, .filter-bar .el-select { width: 100% !important; }
+  .order-item-row { flex-wrap: wrap; }
+  .order-item-row .el-input-number { width: 100px !important; }
+  :deep(.el-table) { font-size: 13px; }
+  :deep(.el-table th), :deep(.el-table td) { padding: 6px 0; }
+  :deep(.el-form-item__label) { font-size: 13px; }
+  :deep(.el-dialog) { margin: 8px auto; }
 }
 </style>
