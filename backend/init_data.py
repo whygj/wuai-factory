@@ -5,12 +5,10 @@ from models import User, RawMaterial, Product
 def init_data():
     db = SessionLocal()
     try:
-        # Create default users if not exist
+        # Create default admin (李伟/老李) if not exist
         if db.query(User).count() == 0:
             users = [
-                User(phone="13800000001", display_name="老板", roles='["boss"]', status="approved"),
-                User(phone="13800000002", display_name="内勤", roles='["clerk"]', status="approved"),
-                User(phone="13800000003", display_name="班长", roles='["leader"]', status="approved"),
+                User(phone="17800105531", display_name="李伟", roles='["boss"]', status="approved"),
             ]
             db.add_all(users)
 
