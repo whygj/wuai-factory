@@ -20,8 +20,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="unit" label="单位" width="70" />
-        <el-table-column v-if="canEdit('product') || currentRole === 'boss'" label="操作" width="140" fixed="right">
+        <el-table-column v-if="canEdit('product') || currentRole === 'boss'" label="操作" width="200" fixed="right">
           <template #default="{ row }">
+            <el-button link type="success" @click="openBomDialog(row)">配方</el-button>
             <el-button v-if="canEdit('product')" link type="primary" @click="openDialog(row)">编辑</el-button>
             <el-button v-if="currentRole === 'boss'" link type="warning" @click="openAdjust(row)">盘点</el-button>
           </template>
@@ -39,6 +40,7 @@
             <span v-if="item.spec">规格: {{ item.spec }}</span>
           </div>
           <div class="card-actions" v-if="canEdit('product') || currentRole === 'boss'">
+            <el-button size="small" type="success" plain @click="openBomDialog(item)">配方</el-button>
             <el-button v-if="canEdit('product')" size="small" @click="openDialog(item)">编辑</el-button>
             <el-button v-if="currentRole === 'boss'" size="small" type="warning" plain @click="openAdjust(item)">盘点</el-button>
           </div>
@@ -75,6 +77,42 @@
       </template>
     </el-dialog>
 
+    <!-- BOM Dialog -->
+    <el-dialog v-model="bomDialogVisible" :title="`配方 - ${bomProduct?.name || ''}`" :width="isMobile ? '95%' : '640px'" destroy-on-close>
+      <div v-if="!canEditBom" class="bom-readonly-hint">当前角色只读（配方维护：老板/班长）</div>
+      <el-form :model="bomForm" label-width="90px" size="large">
+        <el-form-item label="基准批量">
+          <div style="display:flex; gap:8px; width:100%;">
+            <el-input-number v-model="bomForm.base_quantity" :min="0.01" :precision="2" style="width: 160px;" />
+            <el-input v-model="bomForm.base_unit" placeholder="单位（如 盒）" style="width: 120px;" />
+            <span class="bom-hint">每 {{ bomForm.base_quantity }}{{ bomForm.base_unit }} 的用料如下</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="原料明细">
+          <div style="width: 100%;">
+            <div v-for="(item, idx) in bomForm.items" :key="idx" class="bom-row">
+              <el-select v-model="item.material_id" placeholder="选择原料" style="flex: 1;" filterable>
+                <el-option v-for="m in materialList" :key="m.id" :label="m.name" :value="m.id" />
+              </el-select>
+              <el-input-number v-model="item.material_quantity" :min="0.01" :precision="2" placeholder="用量" style="width: 130px;" />
+              <span class="bom-unit">{{ getBomUnit(item.material_id) }}</span>
+              <el-button v-if="canEditBom" link type="danger" @click="bomForm.items.splice(idx, 1)">删</el-button>
+            </div>
+            <el-button v-if="canEditBom" type="primary" plain @click="addBomItem" style="margin-top: 8px; width: 100%;">+ 添加原料</el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+      <div class="bom-cost" v-if="bomCostPreview">
+        <div>每{{ bomForm.base_quantity }}{{ bomForm.base_unit }}原料成本：<b>¥{{ bomCostPreview.base_cost.toFixed(2) }}</b></div>
+        <div>单位成本：<b style="color:#E65100;">¥{{ bomCostPreview.unit_cost.toFixed(3) }}</b> / {{ bomForm.base_unit }}</div>
+      </div>
+      <div class="bom-cost" v-else style="color:#999;">成本试算需要原料档案价（未设进价的原料按0计）</div>
+      <template #footer>
+        <el-button @click="bomDialogVisible = false" size="large">关闭</el-button>
+        <el-button v-if="canEditBom" type="primary" @click="handleSaveBom" :loading="bomSaving" size="large">保存配方</el-button>
+      </template>
+    </el-dialog>
+
     <!-- Stocktake Adjust Dialog (boss only) -->
     <el-dialog v-model="adjustDialogVisible" :title="`盘点 - ${adjustTarget?.name || ''}`" :width="isMobile ? '90%' : '480px'" destroy-on-close>
       <el-form :model="adjustForm" label-width="80px" size="large">
@@ -103,13 +141,15 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { getProducts, createProduct, updateProduct, adjustProduct, canEdit } from '../api'
+import { getProducts, createProduct, updateProduct, adjustProduct, canEdit, getBom, saveBom, getMaterials } from '../api'
 import { ElMessage } from 'element-plus'
 
 const isMobile = ref(window.innerWidth <= 768)
 window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
 
 const currentRole = localStorage.getItem('currentRole') || ''
+// 配方维护：boss + leader（班长最懂配方）
+const canEditBom = ['boss', 'leader'].includes(currentRole)
 
 const products = ref([])
 const search = ref('')
@@ -118,6 +158,78 @@ const editing = ref(null)
 const submitting = ref(false)
 const categories = ['慕斯', '果酱', '巧克力', '其他']
 const units = ['盒', '瓶', '箱', '个']
+
+const bomDialogVisible = ref(false)
+const bomSaving = ref(false)
+const bomProduct = ref(null)
+const materialList = ref([])
+const bomForm = ref({ base_quantity: 100, base_unit: '盒', items: [] })
+
+function getBomUnit(materialId) {
+  const m = materialList.value.find(x => x.id === materialId)
+  return m ? m.unit : ''
+}
+
+const bomCostPreview = computed(() => {
+  if (!bomForm.value.items.length) return null
+  const baseCost = bomForm.value.items.reduce((sum, item) => {
+    const m = materialList.value.find(x => x.id === item.material_id)
+    return sum + (item.material_quantity || 0) * ((m && m.purchase_price) || 0)
+  }, 0)
+  if (!bomForm.value.base_quantity) return null
+  return { base_cost: baseCost, unit_cost: baseCost / bomForm.value.base_quantity }
+})
+
+async function openBomDialog(row) {
+  bomProduct.value = row
+  if (!materialList.value.length) {
+    const res = await getMaterials({ page_size: 200 })
+    materialList.value = res.items
+  }
+  const bom = await getBom(row.id)
+  if (bom && bom.items && bom.items.length) {
+    bomForm.value = {
+      base_quantity: bom.base_quantity,
+      base_unit: bom.base_unit,
+      items: bom.items.map(i => ({ material_id: i.material_id, material_quantity: i.material_quantity })),
+    }
+  } else {
+    bomForm.value = { base_quantity: 100, base_unit: row.unit || '盒', items: [] }
+  }
+  bomDialogVisible.value = true
+}
+
+function addBomItem() {
+  bomForm.value.items.push({ material_id: null, material_quantity: 1 })
+}
+
+async function handleSaveBom() {
+  if (!bomForm.value.base_quantity || bomForm.value.base_quantity <= 0) {
+    ElMessage.warning('请填写基准批量')
+    return
+  }
+  if (!bomForm.value.base_unit) {
+    ElMessage.warning('请填写基准批量单位')
+    return
+  }
+  const items = bomForm.value.items.filter(i => i.material_id && i.material_quantity > 0)
+  if (items.length === 0) {
+    ElMessage.warning('配方至少需要一行原料')
+    return
+  }
+  bomSaving.value = true
+  try {
+    await saveBom(bomProduct.value.id, {
+      base_quantity: bomForm.value.base_quantity,
+      base_unit: bomForm.value.base_unit,
+      items: items.map(i => ({ material_id: i.material_id, material_quantity: i.material_quantity })),
+    })
+    ElMessage.success('配方已保存')
+    bomDialogVisible.value = false
+  } catch (e) {} finally {
+    bomSaving.value = false
+  }
+}
 
 const adjustDialogVisible = ref(false)
 const adjusting = ref(false)
@@ -222,6 +334,20 @@ onMounted(load)
 .adjust-diff.diff-up { background: #E8F5E9; color: #2E7D32; }
 .adjust-diff.diff-down { background: #FFEBEE; color: #C62828; }
 .adjust-diff.diff-zero { background: #f5f5f5; color: #999; font-weight: 400; }
+.bom-readonly-hint { margin-bottom: 12px; color: #999; font-size: 13px; }
+.bom-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.bom-unit { font-size: 13px; color: #999; min-width: 30px; }
+.bom-hint { font-size: 13px; color: #999; }
+.bom-cost {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: #FFF3E0;
+  border-radius: 8px;
+  font-size: 15px;
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
 .visible-mobile { display: none; }
 .hidden-mobile { display: block; }
 .card-list { display: flex; flex-direction: column; gap: 8px; }

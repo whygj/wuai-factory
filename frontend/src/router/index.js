@@ -31,6 +31,7 @@ const routes = [
       { path: 'lab', name: 'LabRecords', component: () => import('../views/LabRecords.vue') },
       { path: 'batch-trace', name: 'BatchTrace', component: () => import('../views/BatchTrace.vue') },
       { path: 'reports', name: 'Reports', component: () => import('../views/Reports.vue') },
+      { path: 'cost', name: 'CostReport', component: () => import('../views/CostReport.vue') },
       { path: 'users', name: 'Users', component: () => import('../views/UserManage.vue') },
       { path: 'operation-logs', name: 'OperationLogs', component: () => import('../views/OperationLogs.vue') },
     ],

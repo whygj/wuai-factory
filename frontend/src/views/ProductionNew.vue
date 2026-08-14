@@ -15,14 +15,14 @@
           </el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item label="生产产品">
-              <el-select v-model="form.product_id" placeholder="选择产品" style="width: 100%">
+              <el-select v-model="form.product_id" placeholder="选择产品" style="width: 100%" @change="onProductOrQtyChange">
                 <el-option v-for="p in products" :key="p.id" :label="`${p.name} (${p.unit})`" :value="p.id" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="8">
             <el-form-item label="生产数量">
-              <el-input-number v-model="form.quantity" :min="0.01" :precision="2" style="width: 100%" />
+              <el-input-number v-model="form.quantity" :min="0.01" :precision="2" style="width: 100%" @change="onProductOrQtyChange" />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="8">
@@ -39,7 +39,12 @@
 
         <!-- Raw Materials Usage -->
         <el-divider>消耗原料</el-divider>
+        <el-alert v-if="noBomHint" type="info" :closable="false" class="no-bom-alert"
+          :title="noBomHint" />
+        <el-alert v-else-if="bomApplied" type="success" :closable="false" class="no-bom-alert"
+          :title="`已按配方预填（每${bomBaseText}），用量可修改`" />
         <div v-for="(item, idx) in form.raw_materials_used" :key="idx" class="material-row">
+          <div v-if="item.insufficient" class="insufficient-warn">库存不足，当前 {{ item.current_stock }} 需 {{ item.quantity }}</div>
           <el-row :gutter="12" align="middle">
             <el-col :span="10">
               <el-select v-model="item.material_id" placeholder="选择原料" style="width: 100%">
@@ -73,13 +78,49 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { createProduction, getProducts, getMaterials, previewBatchUsage } from '../api'
+import { ref, computed, onMounted } from 'vue'
+import { createProduction, getProducts, getMaterials, previewBatchUsage, previewBom } from '../api'
 import { ElMessage } from 'element-plus'
 
 const loading = ref(false)
 const products = ref([])
 const materials = ref([])
+const noBomHint = ref('')
+const bomApplied = ref(false)
+const bomBaseText = ref('')
+
+let bomTimer = null
+function onProductOrQtyChange() {
+  // 防抖查配方预填（纯计算接口）
+  clearTimeout(bomTimer)
+  bomTimer = setTimeout(applyBomPreview, 400)
+}
+
+async function applyBomPreview() {
+  bomApplied.value = false
+  noBomHint.value = ''
+  if (!form.value.product_id || !form.value.quantity || form.value.quantity <= 0) return
+  try {
+    const res = await previewBom({ product_id: form.value.product_id, quantity: form.value.quantity })
+    if (!res.has_bom) {
+      noBomHint.value = '该产品未设配方，可在「产品库存→配方」中设置；下方手动填写用量'
+      return
+    }
+    bomBaseText.value = `${res.base_quantity}${res.base_unit}`
+    // 预填全部原料（每行可改，提交时用的是这里的值）
+    form.value.raw_materials_used = res.items.map(i => ({
+      material_id: i.material_id,
+      quantity: i.needed_quantity,
+      unit: i.material_unit,
+      batch_preview: [],
+      insufficient: !i.sufficient,
+      current_stock: i.current_stock,
+    }))
+    bomApplied.value = true
+    // 预填后刷新各行FEFO预览
+    form.value.raw_materials_used.forEach((_, idx) => loadBatchPreview(idx))
+  } catch (e) {}
+}
 
 const form = ref({
   date: new Date().toISOString().slice(0, 10),
@@ -105,6 +146,15 @@ function removeMaterial(idx) {
 
 let previewTimer = null
 function onQtyChange(idx) {
+  // 手改用量后重检库存充足标志
+  const item = form.value.raw_materials_used[idx]
+  if (item && item.material_id) {
+    const m = materials.value.find(x => x.id === item.material_id)
+    if (m) {
+      item.current_stock = m.current_stock
+      item.insufficient = item.quantity > m.current_stock
+    }
+  }
   // 防抖300ms查FEFO预览（只读提示，班长不手选批次）
   clearTimeout(previewTimer)
   previewTimer = setTimeout(() => loadBatchPreview(idx), 300)
@@ -201,6 +251,18 @@ onMounted(async () => {
   border-radius: 6px;
   font-size: 13px;
   color: #E65100;
+}
+.no-bom-alert {
+  margin-bottom: 12px;
+}
+.insufficient-warn {
+  margin-bottom: 4px;
+  padding: 4px 10px;
+  background: #FFEBEE;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #C62828;
+  font-weight: 600;
 }
 
 .form-actions {

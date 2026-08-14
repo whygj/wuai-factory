@@ -40,6 +40,9 @@
             <router-link to="/reports" class="grid-item" @click="showMore = false">
               <span class="grid-icon">📈</span><span>经营报表</span>
             </router-link>
+            <router-link to="/cost" class="grid-item" @click="showMore = false">
+              <span class="grid-icon">💰</span><span>生产成本</span>
+            </router-link>
           </div>
         </div>
 

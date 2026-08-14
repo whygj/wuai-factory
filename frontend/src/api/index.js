@@ -157,6 +157,13 @@ export const createReturn = (data) => api.post('/returns', data)
 export const voidReturn = (id) => api.put(`/returns/${id}/void`)
 export const getOrderReturns = (orderId) => api.get(`/sales-orders/${orderId}/returns`)
 
+// BOM & Cost (v3.3)
+export const getBom = (productId) => api.get(`/products/${productId}/bom`)
+export const saveBom = (productId, data) => api.put(`/products/${productId}/bom`, data)
+export const previewBom = (data) => api.post('/production/preview-bom', data)
+export const getCostReport = (params) => api.get('/reports/cost', { params })
+export const getGrossMargin = (params) => api.get('/reports/gross-margin', { params })
+
 // Operation Logs
 export const getOperationLogs = (params) => api.get('/operation-logs', { params })
 export const getOperationLogFilters = () => api.get('/operation-logs/filters')

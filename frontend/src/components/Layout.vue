@@ -19,6 +19,9 @@
             <router-link to="/reports" class="nav-item" :class="{ active: $route.path === '/reports' }">
               <span>经营报表</span>
             </router-link>
+            <router-link to="/cost" class="nav-item" :class="{ active: $route.path === '/cost' }">
+              <span>生产成本</span>
+            </router-link>
           </div>
         </div>
 

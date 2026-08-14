@@ -63,6 +63,34 @@
         </el-row>
       </el-tab-pane>
 
+      <el-tab-pane label="毛利" name="margin">
+        <div class="tab-toolbar">
+          <el-date-picker v-model="marginMonth" type="month" placeholder="选择月份" value-format="YYYY-MM" @change="loadMargin" />
+        </div>
+        <div class="margin-board" v-if="margin.year">
+          <div class="margin-row">
+            <span class="margin-label">本月销售收入（订单额）</span>
+            <span class="margin-value">¥{{ (margin.revenue || 0).toLocaleString() }}</span>
+          </div>
+          <div class="margin-row">
+            <span class="margin-label">本月原料消耗（生产成本）</span>
+            <span class="margin-value cost">− ¥{{ (margin.material_cost || 0).toLocaleString() }}</span>
+          </div>
+          <div class="margin-divider"></div>
+          <div class="margin-row total">
+            <span class="margin-label">粗毛利</span>
+            <span class="margin-value" :style="{ color: margin.gross_margin >= 0 ? '#2E7D32' : '#C62828' }">
+              ¥{{ (margin.gross_margin || 0).toLocaleString() }}
+              <span v-if="margin.margin_pct != null" class="margin-pct">（{{ margin.margin_pct }}%）</span>
+            </span>
+          </div>
+          <div class="margin-notes">
+            注：不含人工/水电/房租/包装等费用，仅原料成本口径<br>
+            注：按月汇总，生产与销售存在时间错位（如3月生产4月售出）
+          </div>
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane label="库存报表" name="inventory">
         <el-row :gutter="16" class="kpi-row">
           <el-col :xs="12" :sm="6">
@@ -104,7 +132,7 @@ import { LineChart, BarChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, GridComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import KpiCard from '../components/KpiCard.vue'
-import { getSalesReport, getProductionReport, getInventoryReport } from '../api'
+import { getSalesReport, getProductionReport, getInventoryReport, getGrossMargin } from '../api'
 
 use([LineChart, BarChart, TitleComponent, TooltipComponent, GridComponent, CanvasRenderer])
 
@@ -114,6 +142,17 @@ const sales = ref({})
 const prodDays = ref(30)
 const prod = ref({})
 const inv = ref({})
+const marginMonth = ref('')
+const margin = ref({})
+
+async function loadMargin() {
+  let params = {}
+  if (marginMonth.value) {
+    const [y, m] = marginMonth.value.split('-')
+    params = { year: y, month: m }
+  }
+  margin.value = await getGrossMargin(params)
+}
 
 const salesDailyOption = computed(() => ({
   tooltip: { trigger: 'axis' },
@@ -170,6 +209,7 @@ function onTabChange(tab) {
   if (tab === 'sales' && !sales.value.total_orders) loadSales()
   if (tab === 'production' && !prod.value.total_records) loadProd()
   if (tab === 'inventory' && !inv.value.material_count) loadInv()
+  if (tab === 'margin' && !margin.value.year) loadMargin()
 }
 
 onMounted(() => { loadSales() })
@@ -179,6 +219,20 @@ onMounted(() => { loadSales() })
 .page-title { font-size: 24px; font-weight: 700; color: var(--primary); margin-bottom: 20px; }
 .tab-toolbar { margin-bottom: 16px; }
 .kpi-row { margin-bottom: 16px; }
+.margin-board {
+  max-width: 560px;
+  background: linear-gradient(135deg, #FFF3E0 0%, #FFFFFF 100%);
+  border-radius: 12px;
+  padding: 24px 28px;
+}
+.margin-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; font-size: 17px; }
+.margin-row.total { font-size: 20px; font-weight: 700; }
+.margin-label { color: #555; }
+.margin-value { font-weight: 600; }
+.margin-value.cost { color: #C62828; }
+.margin-divider { border-top: 2px dashed #FFCC80; margin: 8px 0; }
+.margin-pct { font-size: 15px; }
+.margin-notes { margin-top: 14px; font-size: 12px; color: #999; line-height: 1.8; }
 .kpi-row .el-col { margin-bottom: 12px; }
 .chart-card { margin-bottom: 16px; }
 .card-title { font-size: 15px; font-weight: 600; }
