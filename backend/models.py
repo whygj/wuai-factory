@@ -194,12 +194,30 @@ class PurchaseOrder(Base):
     supplier_id = Column(Integer, ForeignKey("suppliers.id"))
     items = Column(Text)
     total_amount = Column(REAL, default=0)
+    # v3.2: 供应商付款（与 sales_orders 对称）
+    paid_amount = Column(REAL, default=0)
+    payment_status = Column(Text, default="未付款")
     status = Column(Text, default="待到货")
     operator = Column(Text)
     notes = Column(Text)
     created_at = Column(DateTime, default=now_cn)
 
     supplier = relationship("Supplier")
+
+
+class PurchasePayment(Base):
+    """供应商付款流水（v3.2）：只作废不物理删（与盘点流水同一哲学）"""
+    __tablename__ = "purchase_payments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    purchase_order_id = Column(Integer, ForeignKey("purchase_orders.id"), nullable=False)
+    amount = Column(REAL, nullable=False)
+    date = Column(Date, nullable=False)
+    method = Column(Text)  # 转账/现金/承兑，自由文本
+    status = Column(Text, default="有效")  # 有效/已作废
+    operator = Column(Text)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=now_cn)
 
 
 class LabRecord(Base):
@@ -269,7 +287,9 @@ class ReturnRecord(Base):
     total_amount = Column(REAL)
     return_type = Column(Text, nullable=False)  # 退回入库 / 报废退回
     product_batch_ref = Column(Text)  # 退回的是哪个生产批次（文本引用，轻量）
-    status = Column(Text, default="待处理")
+    status = Column(Text, default="有效")  # 有效/已作废
     operator = Column(Text)
     notes = Column(Text)
     created_at = Column(DateTime, default=now_cn)
+
+    product = relationship("Product")

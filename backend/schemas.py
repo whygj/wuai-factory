@@ -428,6 +428,34 @@ class PurchaseStatusUpdate(BaseModel):
     status: str
 
 
+# 供应商付款（v3.2）
+class PurchasePaymentRequest(BaseModel):
+    amount: float = Field(gt=0, description="付款金额必须大于0")
+    date: date
+    method: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# 销售退货（v3.2）
+class ReturnCreateRequest(BaseModel):
+    date: date
+    customer_id: Optional[int] = None
+    sales_order_id: Optional[int] = None
+    product_id: int
+    quantity: float = Field(gt=0, description="退货数量必须大于0")
+    unit_price: Optional[float] = Field(default=None, ge=0, description="退货单价，默认取订单行单价")
+    return_type: str
+    product_batch_ref: Optional[str] = None
+    notes: Optional[str] = None
+
+    @field_validator("return_type")
+    @classmethod
+    def validate_return_type(cls, v):
+        if v not in ("退回入库", "报废退回"):
+            raise ValueError("return_type 必须是 退回入库 或 报废退回")
+        return v
+
+
 # Stats
 class MaterialDistribution(BaseModel):
     name: str

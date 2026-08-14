@@ -883,6 +883,112 @@ def confirm_purchase_inbound(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# ==================== Purchase Payments & Payables (v3.2) ====================
+
+@app.post("/api/purchases/{order_id}/payments")
+def add_purchase_payment(
+    order_id: int,
+    data: schemas.PurchasePaymentRequest,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    # 钱出账必过老板（与回款登记同款防御）
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="仅老板可登记付款")
+    try:
+        return crud.record_purchase_payment(db, order_id, data, current_user.display_name or current_user.phone)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/purchases/{order_id}/payments")
+def list_purchase_payments(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_purchase_payments(db, order_id)
+
+
+@app.put("/api/purchase-payments/{payment_id}/void")
+def void_purchase_payment(
+    payment_id: int,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="仅老板可作废付款")
+    try:
+        return crud.void_purchase_payment(db, payment_id, current_user.display_name or current_user.phone)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/payables/summary")
+def payables_summary(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_payables_summary(db)
+
+
+@app.get("/api/payables")
+def list_payables(
+    supplier_id: int = Query(0),
+    payment_status: str = Query(""),
+    page: int = Query(1),
+    page_size: int = Query(50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_payable_orders(db, supplier_id=supplier_id, payment_status=payment_status,
+                                   page=page, page_size=page_size)
+
+
+# ==================== Sales Returns (v3.2) ====================
+
+@app.post("/api/returns")
+def create_return(
+    data: schemas.ReturnCreateRequest,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    # 退货是销售侧业务录入：clerk+boss 可登记，leader 不可
+    if current_role not in ("boss", "clerk"):
+        raise HTTPException(status_code=403, detail="无权限登记退货")
+    try:
+        return crud.create_return(db, data, current_user.display_name or current_user.phone)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/returns/{return_id}/void")
+def void_return(
+    return_id: int,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="仅老板可作废退货")
+    try:
+        return crud.void_return(db, return_id, current_user.display_name or current_user.phone)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/sales-orders/{order_id}/returns")
+def list_order_returns(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_order_returns(db, order_id)
+
+
 # ==================== Receivables ====================
 
 @app.get("/api/receivables")

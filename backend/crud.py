@@ -8,7 +8,7 @@ from models import (
     User, RawMaterial, Product, InventoryTransaction, ProductTransaction,
     ProductionRecord, ShipmentRecord, OperationLog,
     Customer, Supplier, SalesOrder, PurchaseOrder,
-    LabRecord, MaterialBatch, BatchUsage,
+    LabRecord, MaterialBatch, BatchUsage, PurchasePayment, ReturnRecord,
 )
 from schemas import (
     MaterialCreate, MaterialUpdate, InboundRequest, StockAdjustRequest,
@@ -20,6 +20,7 @@ from schemas import (
     SalesOrderCreate, SalesOrderStatusUpdate, PaymentRequest,
     PurchaseOrderCreate, PurchaseStatusUpdate,
     LabRecordCreate, LabRecordUpdate,
+    PurchasePaymentRequest, ReturnCreateRequest,
 )
 
 
@@ -1032,6 +1033,9 @@ def get_purchase_orders(db: Session, supplier_id: int = 0, status: str = "", sta
             "supplier_id": o.supplier_id,
             "supplier_name": o.supplier.name if o.supplier else "",
             "items": o.items, "total_amount": o.total_amount,
+            "paid_amount": o.paid_amount or 0,
+            "payment_status": o.payment_status or "未付款",
+            "unpaid_amount": round((o.total_amount or 0) - (o.paid_amount or 0), 2),
             "status": o.status, "operator": o.operator,
             "notes": o.notes, "created_at": o.created_at,
         }
@@ -1048,6 +1052,9 @@ def get_purchase_order(db: Session, order_id: int):
         "supplier_id": o.supplier_id,
         "supplier_name": o.supplier.name if o.supplier else "",
         "items": o.items, "total_amount": o.total_amount,
+        "paid_amount": o.paid_amount or 0,
+        "payment_status": o.payment_status or "未付款",
+        "unpaid_amount": round((o.total_amount or 0) - (o.paid_amount or 0), 2),
         "status": o.status, "operator": o.operator,
         "notes": o.notes, "created_at": o.created_at,
     }
@@ -1173,9 +1180,11 @@ def confirm_inbound(db: Session, order_id: int, operator: str) -> PurchaseOrder:
 # ==================== Receivables ====================
 
 def get_receivables(db: Session, page: int = 1, page_size: int = 50):
+    # v3.2: 全额回款后退货的订单（paid>total，负应收）也要出现在列表——老板要看到"应退款"。
+    # 条件改为：未付清 或 已超付（total < paid）
     query = db.query(SalesOrder).filter(
-        SalesOrder.payment_status != "已付款",
         SalesOrder.status != "已取消",
+        (SalesOrder.payment_status != "已付款") | (SalesOrder.total_amount < SalesOrder.paid_amount),
     )
     total = query.count()
     items = query.order_by(SalesOrder.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -1912,3 +1921,291 @@ def trace_production_backward(db: Session, production_id: int):
         "batches": batches,
         "unbatched": unbatched,
     }
+
+
+# ==================== Purchase Payments (v3.2) ====================
+
+def _recalc_purchase_payment_status(order: PurchaseOrder):
+    paid = order.paid_amount or 0
+    total = order.total_amount or 0
+    if paid <= 0:
+        order.payment_status = "未付款"
+    elif paid >= total:
+        order.payment_status = "已付款"
+    else:
+        order.payment_status = "部分付款"
+
+
+def record_purchase_payment(db: Session, order_id: int, data: PurchasePaymentRequest, operator: str) -> dict:
+    """供应商付款登记（boss专属入口）：行锁+流水+状态重算，超额不拦（可先付后票/多退少补场景看流水对账）"""
+    try:
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).with_for_update().first()
+        if not order:
+            raise ValueError("采购单不存在")
+        if order.status == "已取消":
+            raise ValueError("采购单已取消，无法登记付款")
+        order.paid_amount = round((order.paid_amount or 0) + data.amount, 2)
+        _recalc_purchase_payment_status(order)
+
+        payment = PurchasePayment(
+            purchase_order_id=order_id,
+            amount=data.amount,
+            date=data.date,
+            method=data.method,
+            status="有效",
+            operator=operator,
+            notes=data.notes,
+        )
+        db.add(payment)
+        db.flush()
+        log_operation(db, operator, "登记付款", "purchase_orders", order_id,
+                      f"采购单 {order.order_no} 付款 {data.amount}（{data.method or '未注明方式'}），累计已付 {order.paid_amount}")
+        db.commit()
+        return {"id": payment.id, "paid_amount": order.paid_amount, "payment_status": order.payment_status}
+    except Exception:
+        db.rollback()
+        raise
+
+
+def void_purchase_payment(db: Session, payment_id: int, operator: str) -> dict:
+    """作废付款（boss专属）：逆向恢复 paid_amount、重算状态、流水只标已作废不物理删"""
+    try:
+        payment = db.query(PurchasePayment).filter(PurchasePayment.id == payment_id).first()
+        if not payment:
+            raise ValueError("付款流水不存在")
+        if payment.status == "已作废":
+            raise ValueError("该付款已作废")
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == payment.purchase_order_id).with_for_update().first()
+        if not order:
+            raise ValueError("采购单不存在")
+        payment.status = "已作废"
+        order.paid_amount = round((order.paid_amount or 0) - payment.amount, 2)
+        if order.paid_amount < 0:
+            order.paid_amount = 0
+        _recalc_purchase_payment_status(order)
+        log_operation(db, operator, "作废付款", "purchase_orders", order.id,
+                      f"采购单 {order.order_no} 作废付款 {payment.amount}，已付恢复为 {order.paid_amount}")
+        db.commit()
+        return {"id": payment_id, "status": payment.status, "paid_amount": order.paid_amount,
+                "payment_status": order.payment_status}
+    except Exception:
+        db.rollback()
+        raise
+
+
+def get_purchase_payments(db: Session, order_id: int):
+    payments = db.query(PurchasePayment).filter(
+        PurchasePayment.purchase_order_id == order_id,
+    ).order_by(PurchasePayment.id.desc()).all()
+    return [{
+        "id": p.id, "purchase_order_id": p.purchase_order_id,
+        "amount": p.amount, "date": str(p.date), "method": p.method or "",
+        "status": p.status, "operator": p.operator or "", "notes": p.notes or "",
+        "created_at": p.created_at,
+    } for p in payments]
+
+
+def get_payables_summary(db: Session):
+    """应付款汇总：总应付=所有未取消采购单 total 之和；欠款=total-paid 之和（负数也计入）；
+    本月已付=本月有效付款流水之和"""
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    orders = db.query(PurchaseOrder).filter(PurchaseOrder.status != "已取消").all()
+    total_payable = sum(o.total_amount or 0 for o in orders)
+    unpaid_total = sum((o.total_amount or 0) - (o.paid_amount or 0) for o in orders)
+
+    month_paid = db.query(func.coalesce(func.sum(PurchasePayment.amount), 0)).filter(
+        PurchasePayment.status == "有效",
+        PurchasePayment.date >= month_start,
+    ).scalar()
+
+    return {
+        "total_payable": round(total_payable, 2),
+        "month_paid": round(month_paid, 2),
+        "unpaid_total": round(unpaid_total, 2),
+    }
+
+
+def get_payable_orders(db: Session, supplier_id: int = 0, payment_status: str = "", page: int = 1, page_size: int = 50):
+    """应付款明细：未付清的采购单（含负欠款=多付）"""
+    query = db.query(PurchaseOrder).filter(PurchaseOrder.status != "已取消")
+    if payment_status == "未付款":
+        query = query.filter(PurchaseOrder.payment_status != "已付款")
+    elif payment_status:
+        query = query.filter(PurchaseOrder.payment_status == payment_status)
+    else:
+        query = query.filter(PurchaseOrder.payment_status != "已付款")
+    if supplier_id:
+        query = query.filter(PurchaseOrder.supplier_id == supplier_id)
+    total = query.count()
+    items = query.order_by(PurchaseOrder.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    result = []
+    for o in items:
+        result.append({
+            "id": o.id, "order_no": o.order_no, "date": str(o.date),
+            "supplier_id": o.supplier_id,
+            "supplier_name": o.supplier.name if o.supplier else "",
+            "total_amount": o.total_amount or 0,
+            "paid_amount": o.paid_amount or 0,
+            "unpaid_amount": round((o.total_amount or 0) - (o.paid_amount or 0), 2),
+            "payment_status": o.payment_status or "未付款",
+            "status": o.status,
+            "items": o.items,
+            "created_at": o.created_at,
+        })
+    return {"total": total, "items": result}
+
+
+# ==================== Sales Returns (v3.2) ====================
+
+def _get_order_item_price(order: SalesOrder, product_id: int) -> Optional[float]:
+    """订单行单价（退货默认价）"""
+    items = json.loads(order.items) if order.items else []
+    for it in items:
+        if it.get("product_id") == product_id:
+            return it.get("unit_price")
+    return None
+
+
+def create_return(db: Session, data: ReturnCreateRequest, operator: str) -> dict:
+    """销售退货（clerk+boss入口）：方案A——订单 total 直接冲减+操作日志留痕；
+    退回入库只加 current_stock 总量（不做可用区分，老李已知情）；报废不碰库存。
+    防虚退：quantity 不得超过该订单该产品已发数量。"""
+    try:
+        if not data.sales_order_id:
+            raise ValueError("退货必须关联销售订单")
+        order = db.query(SalesOrder).filter(SalesOrder.id == data.sales_order_id).with_for_update().first()
+        if not order:
+            raise ValueError("销售订单不存在")
+        if order.status == "已取消":
+            raise ValueError("订单已取消，无法退货")
+
+        product = db.query(Product).filter(Product.id == data.product_id).with_for_update().first()
+        if not product:
+            raise ValueError("产品不存在")
+
+        # 防虚退：已发量校验（含已作废退货不减——作废退货视同没发生）
+        already_shipped = db.query(func.coalesce(func.sum(ShipmentRecord.quantity), 0)).filter(
+            ShipmentRecord.sales_order_id == data.sales_order_id,
+            ShipmentRecord.product_id == data.product_id,
+        ).scalar()
+        already_returned = db.query(func.coalesce(func.sum(ReturnRecord.quantity), 0)).filter(
+            ReturnRecord.sales_order_id == data.sales_order_id,
+            ReturnRecord.product_id == data.product_id,
+            ReturnRecord.status == "有效",
+        ).scalar()
+        returnable = already_shipped - already_returned
+        if data.quantity > returnable:
+            raise ValueError(f"退货数量超过可退量（已发: {already_shipped}，已退: {already_returned}，可退: {returnable}）")
+
+        unit_price = data.unit_price if data.unit_price is not None else _get_order_item_price(order, data.product_id)
+        amount = round(data.quantity * (unit_price or 0), 2)
+
+        old_total = order.total_amount or 0
+        order.total_amount = round(old_total - amount, 2)
+        if order.total_amount < 0:
+            order.total_amount = 0
+
+        record = ReturnRecord(
+            date=data.date,
+            customer_id=data.customer_id if data.customer_id is not None else order.customer_id,
+            sales_order_id=data.sales_order_id,
+            product_id=data.product_id,
+            quantity=data.quantity,
+            unit_price=unit_price,
+            total_amount=amount,
+            return_type=data.return_type,
+            product_batch_ref=data.product_batch_ref,
+            status="有效",
+            operator=operator,
+            notes=data.notes,
+        )
+        db.add(record)
+
+        if data.return_type == "退回入库":
+            product.current_stock = round((product.current_stock or 0) + data.quantity, 2)
+            product.updated_at = now_cn()
+            db.add(ProductTransaction(
+                transaction_type="退货入库",
+                product_id=data.product_id,
+                quantity=data.quantity,
+                unit=product.unit,
+                source="return",
+                related_id=0,
+                operator=operator,
+                notes=f"退货 {order.order_no}",
+            ))
+
+        db.flush()
+        log_operation(db, operator, "登记退货", "return_records", record.id,
+                      f"{data.return_type} {product.name} ×{data.quantity}，订单 {order.order_no} 退货冲减：原额{old_total}→现额{order.total_amount}")
+        db.commit()
+        return {
+            "id": record.id, "return_type": record.return_type,
+            "total_amount": amount, "order_total": order.total_amount,
+            "order_paid": order.paid_amount,
+        }
+    except Exception:
+        db.rollback()
+        raise
+
+
+def void_return(db: Session, return_id: int, operator: str) -> dict:
+    """作废退货（boss专属）：完全逆向——total加回、退回入库的减回、负向冲正流水、status=已作废"""
+    try:
+        record = db.query(ReturnRecord).filter(ReturnRecord.id == return_id).first()
+        if not record:
+            raise ValueError("退货记录不存在")
+        if record.status == "已作废":
+            raise ValueError("该退货已作废")
+
+        order = db.query(SalesOrder).filter(SalesOrder.id == record.sales_order_id).with_for_update().first()
+        if not order:
+            raise ValueError("关联订单不存在")
+
+        old_total = order.total_amount or 0
+        order.total_amount = round(old_total + (record.total_amount or 0), 2)
+        record.status = "已作废"
+
+        if record.return_type == "退回入库":
+            product = db.query(Product).filter(Product.id == record.product_id).with_for_update().first()
+            if not product:
+                raise ValueError("产品不存在")
+            product.current_stock = round((product.current_stock or 0) - record.quantity, 2)
+            product.updated_at = now_cn()
+            db.add(ProductTransaction(
+                transaction_type="退货作废冲正",
+                product_id=record.product_id,
+                quantity=-record.quantity,
+                unit=product.unit,
+                source="return-void",
+                related_id=record.id,
+                operator=operator,
+                notes=f"作废退货冲正 {order.order_no}",
+            ))
+
+        log_operation(db, operator, "作废退货", "return_records", return_id,
+                      f"订单 {order.order_no} 退货加回：原额{old_total}→现额{order.total_amount}")
+        db.commit()
+        return {"id": return_id, "status": record.status, "order_total": order.total_amount}
+    except Exception:
+        db.rollback()
+        raise
+
+
+def get_order_returns(db: Session, order_id: int):
+    returns = db.query(ReturnRecord).filter(
+        ReturnRecord.sales_order_id == order_id,
+    ).order_by(ReturnRecord.id.desc()).all()
+    return [{
+        "id": r.id, "date": str(r.date),
+        "customer_id": r.customer_id, "sales_order_id": r.sales_order_id,
+        "product_id": r.product_id,
+        "product_name": r.product.name if r.product else "",
+        "quantity": r.quantity, "unit_price": r.unit_price,
+        "total_amount": r.total_amount, "return_type": r.return_type,
+        "product_batch_ref": r.product_batch_ref,
+        "status": r.status, "operator": r.operator or "",
+        "notes": r.notes or "", "created_at": r.created_at,
+    } for r in returns]
