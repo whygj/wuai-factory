@@ -146,6 +146,22 @@
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12">
+        <el-card v-if="expiring.length" class="section-card" @click="$router.push('/batch-trace')" style="cursor:pointer">
+          <template #header>
+            <div class="section-header">
+              <el-icon class="section-icon" style="color: #FF9800"><Warning /></el-icon>
+              <span class="chart-title" style="color:#FF9800">原料临期 ({{ expiring.length }})</span>
+            </div>
+          </template>
+          <div v-for="e in expiring" :key="e.id" class="alert-item">
+            <span class="alert-name">{{ e.material_name }} {{ e.batch_no }}</span>
+            <span class="alert-value" :style="{ color: e.expired || e.remain_days <= 7 ? '#C62828' : '#FF9800', fontWeight: 700 }">
+              {{ e.expired ? '已过期' + (-e.remain_days) + '天' : '剩' + e.remain_days + '天' }} / 余{{ e.quantity_remaining }}{{ e.unit }}
+            </span>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :sm="12">
         <el-card class="section-card">
           <template #header>
             <div class="section-header">
@@ -176,7 +192,7 @@ import { TitleComponent, TooltipComponent, GridComponent } from 'echarts/compone
 import { CanvasRenderer } from 'echarts/renderers'
 import { Money, TrendCharts, Document, Warning, Box, OfficeBuilding, Search, Van, User } from '@element-plus/icons-vue'
 import KpiCard from './KpiCard.vue'
-import { getBossDashboardExtended, quickSearch } from '../api'
+import { getBossDashboardExtended, quickSearch, getExpiringBatches } from '../api'
 
 use([LineChart, BarChart, TitleComponent, TooltipComponent, GridComponent, CanvasRenderer])
 
@@ -191,6 +207,7 @@ const data = ref({
 const searchKeyword = ref('')
 const showSearchResults = ref(false)
 const searchResults = ref({ customers: [], orders: [], products: [], suppliers: [] })
+const expiring = ref([])
 const hasNoResults = computed(() => {
   const r = searchResults.value
   return (!r.customers || !r.customers.length) && (!r.orders || !r.orders.length) &&
@@ -253,6 +270,7 @@ function actTagType(type) {
 
 onMounted(async () => {
   try { data.value = await getBossDashboardExtended() } catch (e) {}
+  try { expiring.value = await getExpiringBatches(30) } catch (e) {}
 })
 </script>
 

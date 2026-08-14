@@ -138,6 +138,13 @@ export const getInventoryReport = () => api.get('/reports/inventory')
 // Quick Search
 export const quickSearch = (params) => api.get('/quick-search', { params })
 
+// Batches (v3.1)
+export const getBatches = (params) => api.get('/batches', { params })
+export const getExpiringBatches = (days = 30) => api.get('/batches/expiring', { params: { days } })
+export const previewBatchUsage = (materialId, quantity) => api.get('/batches/preview-usage', { params: { material_id: materialId, quantity } })
+export const traceBatchForward = (batchId) => api.get(`/batches/${batchId}/trace-forward`)
+export const traceProductionBackward = (productionId) => api.get(`/production/${productionId}/trace-backward`)
+
 // Operation Logs
 export const getOperationLogs = (params) => api.get('/operation-logs', { params })
 export const getOperationLogFilters = () => api.get('/operation-logs/filters')

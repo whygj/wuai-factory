@@ -94,6 +94,12 @@
               <el-input-number v-model="item.unit_price" :min="0" :precision="2" placeholder="单价" style="width: 120px;" @change="calcSubtotal(idx)" />
               <span class="subtotal-label">¥{{ (item.subtotal || 0).toFixed(2) }}</span>
               <el-button link type="danger" @click="form.items.splice(idx, 1)">删除</el-button>
+              <div class="batch-fields">
+                <el-input v-model="item.batch_no" placeholder="批次号（留空自动生成）" style="flex: 1;" />
+                <el-date-picker v-model="item.production_date" type="date" placeholder="原料生产日期" value-format="YYYY-MM-DD" style="width: 150px;" :clearable="true" />
+                <el-date-picker v-model="item.expiry_date" type="date" placeholder="保质期到" value-format="YYYY-MM-DD" style="width: 150px;" :clearable="true" />
+                <span class="batch-hint">选填：填任一项即建批次可追溯</span>
+              </div>
             </div>
             <el-button type="primary" plain @click="addItem" style="margin-top: 8px; width: 100%;">+ 添加原料</el-button>
           </div>
@@ -199,7 +205,7 @@ function openDialog() {
 }
 
 function addItem() {
-  form.value.items.push({ material_id: '', quantity: 1, unit_price: 0, subtotal: 0 })
+  form.value.items.push({ material_id: '', quantity: 1, unit_price: 0, subtotal: 0, batch_no: '', production_date: null, expiry_date: null })
 }
 
 function onMaterialChange(idx) {
@@ -224,7 +230,12 @@ async function handleSubmit() {
     await createPurchase({
       date: form.value.date,
       supplier_id: form.value.supplier_id,
-      items: form.value.items.map(i => ({ material_id: i.material_id, quantity: i.quantity, unit_price: i.unit_price })),
+      items: form.value.items.map(i => ({
+        material_id: i.material_id, quantity: i.quantity, unit_price: i.unit_price,
+        batch_no: i.batch_no || null,
+        production_date: i.production_date || null,
+        expiry_date: i.expiry_date || null,
+      })),
       notes: form.value.notes,
     })
     ElMessage.success('采购单创建成功')
@@ -302,6 +313,18 @@ onMounted(() => { loadData(); loadOptions() })
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.batch-fields {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  flex-wrap: wrap;
+}
+.batch-hint {
+  font-size: 12px;
+  color: #999;
 }
 .subtotal-label {
   min-width: 90px;

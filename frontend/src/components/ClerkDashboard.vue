@@ -31,7 +31,17 @@
       </div>
     </el-card>
 
-    <el-card v-else class="ok-card">
+    <el-card v-if="expiring.length" class="alert-card" @click="$router.push('/batch-trace')" style="cursor:pointer">
+      <template #header><span class="card-title" style="color:#FF9800">⏰ 原料临期（30天内）</span></template>
+      <div v-for="e in expiring" :key="e.id" class="alert-item">
+        <span class="alert-name">{{ e.material_name }} {{ e.batch_no }}</span>
+        <span class="alert-value" :style="{ color: e.expired || e.remain_days <= 7 ? '#C62828' : '#FF9800', fontWeight: 700 }">
+          {{ e.expired ? '已过期' + (-e.remain_days) + '天' : '剩' + e.remain_days + '天' }} / 余{{ e.quantity_remaining }}{{ e.unit }}
+        </span>
+      </div>
+    </el-card>
+
+    <el-card v-if="!(data.alerts && data.alerts.length) && !expiring.length" class="ok-card">
       <div class="ok-text">✅ 库存状态良好，无预警</div>
     </el-card>
   </div>
@@ -40,12 +50,14 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import KpiCard from './KpiCard.vue'
-import { getClerkDashboard } from '../api'
+import { getClerkDashboard, getExpiringBatches } from '../api'
 
 const data = ref({ pending_shipments: 0, pending_inbound: 0, alerts: [], today_sales: 0 })
+const expiring = ref([])
 
 onMounted(async () => {
   try { data.value = await getClerkDashboard() } catch (e) {}
+  try { expiring.value = await getExpiringBatches(30) } catch (e) {}
 })
 </script>
 

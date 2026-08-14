@@ -79,6 +79,9 @@
             <router-link to="/lab" class="grid-item" @click="showMore = false">
               <span class="grid-icon">🔬</span><span>试验室</span>
             </router-link>
+            <router-link to="/batch-trace" class="grid-item" @click="showMore = false">
+              <span class="grid-icon">🔍</span><span>批次追溯</span>
+            </router-link>
           </div>
         </div>
 

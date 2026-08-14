@@ -70,6 +70,9 @@
             <router-link to="/lab" class="nav-item" :class="{ active: $route.path === '/lab' }">
               <span>试验室</span>
             </router-link>
+            <router-link to="/batch-trace" class="nav-item" :class="{ active: $route.path === '/batch-trace' }">
+              <span>批次追溯</span>
+            </router-link>
           </div>
         </div>
 

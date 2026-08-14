@@ -47,7 +47,7 @@
               </el-select>
             </el-col>
             <el-col :span="8">
-              <el-input-number v-model="item.quantity" :min="0.01" :precision="2" placeholder="数量" style="width: 100%" />
+              <el-input-number v-model="item.quantity" :min="0.01" :precision="2" placeholder="数量" style="width: 100%" @change="onQtyChange(idx)" />
             </el-col>
             <el-col :span="4">
               <span class="material-unit">{{ getMaterialUnit(item.material_id) }}</span>
@@ -56,6 +56,9 @@
               <el-button type="danger" circle size="small" @click="removeMaterial(idx)">-</el-button>
             </el-col>
           </el-row>
+          <div v-if="item.batch_preview && item.batch_preview.length" class="batch-preview">
+            将消耗：{{ item.batch_preview.map(p => `${p.batch_no}(${p.take})`).join(' → ') }}
+          </div>
         </div>
         <el-button type="primary" plain @click="addMaterial" style="margin-top: 12px">+ 添加消耗原料</el-button>
 
@@ -71,7 +74,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { createProduction, getProducts, getMaterials } from '../api'
+import { createProduction, getProducts, getMaterials, previewBatchUsage } from '../api'
 import { ElMessage } from 'element-plus'
 
 const loading = ref(false)
@@ -93,11 +96,31 @@ function getMaterialUnit(id) {
 }
 
 function addMaterial() {
-  form.value.raw_materials_used.push({ material_id: null, quantity: 0, unit: '' })
+  form.value.raw_materials_used.push({ material_id: null, quantity: 0, unit: '', batch_preview: [] })
 }
 
 function removeMaterial(idx) {
   form.value.raw_materials_used.splice(idx, 1)
+}
+
+let previewTimer = null
+function onQtyChange(idx) {
+  // 防抖300ms查FEFO预览（只读提示，班长不手选批次）
+  clearTimeout(previewTimer)
+  previewTimer = setTimeout(() => loadBatchPreview(idx), 300)
+}
+
+async function loadBatchPreview(idx) {
+  const item = form.value.raw_materials_used[idx]
+  if (!item || !item.material_id || !item.quantity || item.quantity <= 0) {
+    if (item) item.batch_preview = []
+    return
+  }
+  try {
+    item.batch_preview = await previewBatchUsage(item.material_id, item.quantity)
+  } catch (e) {
+    item.batch_preview = []
+  }
 }
 
 async function handleSubmit() {
@@ -169,6 +192,15 @@ onMounted(async () => {
   font-size: 14px;
   color: var(--text-light);
   line-height: 44px;
+}
+
+.batch-preview {
+  margin: 2px 0 8px;
+  padding: 6px 10px;
+  background: #FFF3E0;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #E65100;
 }
 
 .form-actions {
