@@ -3,6 +3,11 @@ frontend/dist/
 __pycache__/
 *.pyc
 *.db
+*.db-shm
+*.db-wal
 .env
+.env.*
 data/
+backups/
 backend/.venv/
+backend/.jwt_secret
