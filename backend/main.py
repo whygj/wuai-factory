@@ -985,6 +985,64 @@ def inventory_report(
     return crud.get_inventory_report(db)
 
 
+# ==================== Batches (v3.1) ====================
+
+@app.get("/api/batches")
+def list_batches(
+    material_id: int = Query(0),
+    status: str = Query(""),
+    page: int = Query(1),
+    page_size: int = Query(100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_material_batches(db, material_id=material_id, status=status, page=page, page_size=page_size)
+
+
+@app.get("/api/batches/expiring")
+def expiring_batches(
+    days: int = Query(30),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_expiring_batches(db, days=days)
+
+
+@app.get("/api/batches/preview-usage")
+def preview_usage(
+    material_id: int = Query(...),
+    quantity: float = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """生产页FEFO预览：只读提示「将消耗 B1(50)→B2(30)」"""
+    return crud.preview_production_batches(db, material_id, quantity)
+
+
+@app.get("/api/batches/{batch_id}/trace-forward")
+def batch_trace_forward(
+    batch_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    result = crud.trace_batch_forward(db, batch_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="批次不存在")
+    return result
+
+
+@app.get("/api/production/{record_id}/trace-backward")
+def production_trace_backward(
+    record_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    result = crud.trace_production_backward(db, record_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="生产记录不存在")
+    return result
+
+
 # ==================== Export (Excel) ====================
 
 from urllib.parse import quote

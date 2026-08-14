@@ -8,7 +8,7 @@ from models import (
     User, RawMaterial, Product, InventoryTransaction, ProductTransaction,
     ProductionRecord, ShipmentRecord, OperationLog,
     Customer, Supplier, SalesOrder, PurchaseOrder,
-    LabRecord,
+    LabRecord, MaterialBatch, BatchUsage,
 )
 from schemas import (
     MaterialCreate, MaterialUpdate, InboundRequest, StockAdjustRequest,
@@ -311,6 +311,30 @@ def update_product(db: Session, product: Product, data: ProductUpdate, operator:
 
 # ==================== Production ====================
 
+def _allocate_batches_fefo(db: Session, material_id: int, quantity: float) -> list:
+    """FEFO 分配：先到期先出（无到期日的按入库先后排在有到期日的后面）。
+    返回 [(batch, take), ...]；批次剩余量总和不足时返回的部分分配列表长度不变，
+    由调用方决定是否接受（规格2.2：库存校验按总库存维度，批次仅尽力分配）。
+    注意：批次余量是追溯参考值，不追求绝对精确（规格5节），缺批次覆盖不报错。"""
+    batches = db.query(MaterialBatch).filter(
+        MaterialBatch.material_id == material_id,
+        MaterialBatch.status == "在库",
+        MaterialBatch.quantity_remaining > 0,
+    ).all()
+    # 有到期日的按到期升序在前；无到期日的按创建先后垫底
+    batches.sort(key=lambda b: (b.expiry_date is None, b.expiry_date or date.max, b.id))
+
+    allocation = []
+    remaining = quantity
+    for batch in batches:
+        if remaining <= 0:
+            break
+        take = min(batch.quantity_remaining, remaining)
+        allocation.append((batch, take))
+        remaining -= take
+    return allocation
+
+
 def create_production(db: Session, data: ProductionCreate, operator: str) -> ProductionRecord:
     try:
         product = db.query(Product).filter(Product.id == data.product_id).with_for_update().first()
@@ -320,6 +344,7 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
         materials_used = data.raw_materials_used or []
         materials_json = json.dumps([m.model_dump() for m in materials_used], ensure_ascii=False)
         transactions = []
+        batch_usages = []
 
         for usage in materials_used:
             material = db.query(RawMaterial).filter(RawMaterial.id == usage.material_id).with_for_update().first()
@@ -329,6 +354,14 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
                 raise ValueError(f"原料 {material.name} 库存不足（当前: {material.current_stock}，需要: {usage.quantity}）")
             material.current_stock -= usage.quantity
             material.updated_at = now_cn()
+
+            # v3.1 FEFO 扣批次：有在库批次则按到期先后扣并记 batch_usages；
+            # 无批次记录（未分批兼容层）只扣总库存，追溯链断在"未分批"——可接受
+            for batch, take in _allocate_batches_fefo(db, usage.material_id, usage.quantity):
+                batch.quantity_remaining = round(batch.quantity_remaining - take, 4)
+                if batch.quantity_remaining <= 0:
+                    batch.status = "耗尽"
+                batch_usages.append((batch, usage.material_id, take))
 
             transaction = InventoryTransaction(
                 transaction_type="out",
@@ -363,6 +396,15 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
         # 同一操作员另一笔未回填的事务）
         for t in transactions:
             t.related_id = record.id
+
+        # v3.1 批次消耗明细落表（一次生产跨N批次=N行）
+        for batch, material_id, take in batch_usages:
+            db.add(BatchUsage(
+                production_id=record.id,
+                batch_id=batch.id,
+                material_id=material_id,
+                quantity=take,
+            ))
 
         log_operation(db, operator, "生产登记", "production_records", record.id, f"生产 {product.name} {data.quantity}{data.unit or product.unit}")
         db.commit()
@@ -946,6 +988,9 @@ def create_purchase_order(db: Session, data: PurchaseOrderCreate, operator: str)
             "unit": material.unit,
             "quantity": item.quantity,
             "unit_price": item.unit_price,
+            "batch_no": item.batch_no,
+            "production_date": str(item.production_date) if item.production_date else None,
+            "expiry_date": str(item.expiry_date) if item.expiry_date else None,
             "subtotal": subtotal,
         })
 
@@ -1038,6 +1083,28 @@ def update_purchase_status(db: Session, order_id: int, data: PurchaseStatusUpdat
     return order
 
 
+def _parse_date_str(value):
+    """items JSON 里的日期是字符串，Date 列要 date 对象；空/非法返回 None"""
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _generate_batch_no(db: Session, material_id: int, material_name: str) -> str:
+    """默认批次号：原料名缩写YYYYMMDD-当日序号。与用户手输批次同走唯一约束，撞号报错让用户改。"""
+    date_str = date.today().strftime("%Y%m%d")
+    prefix = "".join(ch for ch in material_name if not ch.isdigit())[:6] or "B"
+    pattern = f"{prefix}{date_str}-%"
+    count = db.query(func.count(MaterialBatch.id)).filter(
+        MaterialBatch.material_id == material_id,
+        MaterialBatch.batch_no.like(pattern),
+    ).scalar()
+    return f"{prefix}{date_str}-{count + 1:02d}"
+
+
 def confirm_inbound(db: Session, order_id: int, operator: str) -> PurchaseOrder:
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
@@ -1048,6 +1115,7 @@ def confirm_inbound(db: Session, order_id: int, operator: str) -> PurchaseOrder:
         raise ValueError("采购单已取消")
 
     items = json.loads(order.items) if order.items else []
+    batches_created = 0
     for item in items:
         material = db.query(RawMaterial).filter(RawMaterial.id == item["material_id"]).with_for_update().first()
         if not material:
@@ -1067,8 +1135,36 @@ def confirm_inbound(db: Session, order_id: int, operator: str) -> PurchaseOrder:
         )
         db.add(transaction)
 
+        # v3.1 批次：填了批次号/生产日期/保质期任一项才建批次记录；否则走"未分批"兼容层
+        batch_no = (item.get("batch_no") or "").strip()
+        production_date = _parse_date_str(item.get("production_date"))
+        expiry_date = _parse_date_str(item.get("expiry_date"))
+        if batch_no or production_date or expiry_date:
+            if not batch_no:
+                batch_no = _generate_batch_no(db, material.id, material.name)
+            existing = db.query(MaterialBatch).filter(
+                MaterialBatch.material_id == material.id,
+                MaterialBatch.batch_no == batch_no,
+            ).first()
+            if existing:
+                raise ValueError(f"原料 {material.name} 批次号 {batch_no} 已存在，请修改批次号")
+            db.add(MaterialBatch(
+                material_id=material.id,
+                batch_no=batch_no,
+                quantity_in=item["quantity"],
+                quantity_remaining=item["quantity"],
+                unit_price=item.get("unit_price"),
+                production_date=production_date,
+                expiry_date=expiry_date,
+                supplier_id=order.supplier_id,
+                status="在库",
+                notes=f"采购入库 {order.order_no}",
+            ))
+            batches_created += 1
+
     order.status = "已入库"
-    log_operation(db, operator, "采购入库", "purchase_orders", order_id, f"采购单号 {order.order_no}，入库 {len(items)} 种原料")
+    log_operation(db, operator, "采购入库", "purchase_orders", order_id,
+                  f"采购单号 {order.order_no}，入库 {len(items)} 种原料" + (f"，建批次 {batches_created} 个" if batches_created else ""))
     db.commit()
     db.refresh(order)
     return order
@@ -1650,3 +1746,169 @@ def quick_search(db: Session, keyword: str):
     results["suppliers"] = [{"id": s.id, "name": s.name, "phone": s.phone, "category": s.category} for s in suppliers]
 
     return results
+
+
+# ==================== Batches (v3.1) ====================
+
+def get_material_batches(db: Session, material_id: int = 0, status: str = "", page: int = 1, page_size: int = 100):
+    query = db.query(MaterialBatch)
+    if material_id:
+        query = query.filter(MaterialBatch.material_id == material_id)
+    if status:
+        query = query.filter(MaterialBatch.status == status)
+    total = query.count()
+    items = query.order_by(MaterialBatch.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    result = []
+    for b in items:
+        result.append({
+            "id": b.id, "material_id": b.material_id,
+            "material_name": b.material.name if b.material else "",
+            "batch_no": b.batch_no,
+            "quantity_in": b.quantity_in, "quantity_remaining": b.quantity_remaining,
+            "unit": b.material.unit if b.material else "",
+            "unit_price": b.unit_price,
+            "production_date": str(b.production_date) if b.production_date else None,
+            "expiry_date": str(b.expiry_date) if b.expiry_date else None,
+            "supplier_name": b.supplier.name if b.supplier else "",
+            "status": b.status, "notes": b.notes,
+            "created_at": b.created_at,
+        })
+    return {"total": total, "items": result}
+
+
+def get_expiring_batches(db: Session, days: int = 30):
+    """临期批次：在库有余量且 expiry_date ≤ 今天+days，按剩余天数升序。
+    无到期日的批次不参与（不管理保质期）。"""
+    deadline = date.today() + timedelta(days=days)
+    batches = db.query(MaterialBatch).filter(
+        MaterialBatch.quantity_remaining > 0,
+        MaterialBatch.status == "在库",
+        MaterialBatch.expiry_date.isnot(None),
+        MaterialBatch.expiry_date <= deadline,
+    ).order_by(MaterialBatch.expiry_date.asc()).all()
+    result = []
+    for b in batches:
+        remain_days = (b.expiry_date - date.today()).days
+        result.append({
+            "id": b.id, "material_id": b.material_id,
+            "material_name": b.material.name if b.material else "",
+            "batch_no": b.batch_no,
+            "quantity_remaining": b.quantity_remaining,
+            "unit": b.material.unit if b.material else "",
+            "expiry_date": str(b.expiry_date),
+            "remain_days": remain_days,
+            "expired": remain_days < 0,
+        })
+    return result
+
+
+def preview_production_batches(db: Session, material_id: int, quantity: float):
+    """生产页FEFO预览：显示「将消耗 B1(50)→B2(30)」，班长不手选（规格2.2）"""
+    allocation = _allocate_batches_fefo(db, material_id, quantity)
+    return [{
+        "batch_id": b.id, "batch_no": b.batch_no,
+        "expiry_date": str(b.expiry_date) if b.expiry_date else None,
+        "take": round(take, 4),
+    } for b, take in allocation]
+
+
+def trace_batch_forward(db: Session, batch_id: int):
+    """反向追溯（原料批次→产品→客户）：批次→batch_usages→生产记录→该产品发往哪些客户"""
+    batch = db.query(MaterialBatch).filter(MaterialBatch.id == batch_id).first()
+    if not batch:
+        return None
+    usages = db.query(BatchUsage).filter(BatchUsage.batch_id == batch_id).order_by(BatchUsage.id).all()
+
+    productions = []
+    total_used = 0
+    for u in usages:
+        total_used += u.quantity
+        pr = db.query(ProductionRecord).filter(ProductionRecord.id == u.production_id).first()
+        if not pr:
+            continue
+        pname = pr.product.name if pr.product else ""
+        # 该生产之后同产品的发货去向（按发货记录，含订单客户名）
+        shipments = db.query(ShipmentRecord).filter(ShipmentRecord.product_id == pr.product_id).order_by(ShipmentRecord.id.desc()).limit(20).all()
+        dests = []
+        for s in shipments:
+            dest = s.customer_name or (s.customer_rel.name if s.customer_rel and s.customer_rel.name else "")
+            if dest and dest not in [d["customer"] for d in dests]:
+                dests.append({"customer": dest, "date": str(s.date), "quantity": s.quantity, "order_no": s.sales_order.order_no if s.sales_order else None})
+        productions.append({
+            "production_id": pr.id, "date": str(pr.date),
+            "product_id": pr.product_id, "product_name": pname,
+            "quantity": pr.quantity, "unit": pr.unit,
+            "sugar_degree": pr.sugar_degree, "operator": pr.operator,
+            "used_in_this_production": u.quantity,
+            "shipments": dests,
+        })
+
+    return {
+        "batch": {
+            "id": batch.id, "batch_no": batch.batch_no,
+            "material_id": batch.material_id,
+            "material_name": batch.material.name if batch.material else "",
+            "quantity_in": batch.quantity_in,
+            "quantity_remaining": batch.quantity_remaining,
+            "unit": batch.material.unit if batch.material else "",
+            "unit_price": batch.unit_price,
+            "production_date": str(batch.production_date) if batch.production_date else None,
+            "expiry_date": str(batch.expiry_date) if batch.expiry_date else None,
+            "supplier_name": batch.supplier.name if batch.supplier else "",
+            "status": batch.status,
+        },
+        "total_used": round(total_used, 4),
+        "productions": productions,
+    }
+
+
+def trace_production_backward(db: Session, production_id: int):
+    """正向追溯（生产记录→原料批次）：列全部消耗批次+供应商/生产日期/保质期"""
+    pr = db.query(ProductionRecord).filter(ProductionRecord.id == production_id).first()
+    if not pr:
+        return None
+    usages = db.query(BatchUsage).filter(BatchUsage.production_id == production_id).order_by(BatchUsage.id).all()
+
+    batches = []
+    for u in usages:
+        b = u.batch
+        if not b:
+            continue
+        batches.append({
+            "batch_id": b.id, "batch_no": b.batch_no,
+            "material_id": b.material_id,
+            "material_name": b.material.name if b.material else "",
+            "used_quantity": u.quantity,
+            "unit": b.material.unit if b.material else "",
+            "unit_price": b.unit_price,
+            "production_date": str(b.production_date) if b.production_date else None,
+            "expiry_date": str(b.expiry_date) if b.expiry_date else None,
+            "supplier_name": b.supplier.name if b.supplier else "",
+        })
+
+    # 未分批的原料也列出（提示追溯链断点）
+    unbatched = []
+    material_names = {b["material_id"] for b in batches}
+    used_list = json.loads(pr.raw_materials_used) if pr.raw_materials_used else []
+    for m in used_list:
+        if m.get("material_id") not in material_names:
+            mat = db.query(RawMaterial).filter(RawMaterial.id == m.get("material_id")).first()
+            unbatched.append({
+                "material_id": m.get("material_id"),
+                "material_name": mat.name if mat else str(m.get("material_id")),
+                "used_quantity": m.get("quantity"),
+                "unit": mat.unit if mat else "",
+            })
+
+    return {
+        "production": {
+            "id": pr.id, "date": str(pr.date),
+            "product_id": pr.product_id,
+            "product_name": pr.product.name if pr.product else "",
+            "quantity": pr.quantity, "unit": pr.unit,
+            "sugar_degree": pr.sugar_degree, "operator": pr.operator,
+            "notes": pr.notes,
+        },
+        "batches": batches,
+        "unbatched": unbatched,
+    }

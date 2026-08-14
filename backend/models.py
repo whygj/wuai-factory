@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Text, Date, DateTime, ForeignKey, REAL
+from sqlalchemy import Column, Integer, String, Float, Text, Date, DateTime, ForeignKey, REAL, UniqueConstraint
 from sqlalchemy.orm import relationship
 from utils import now_cn
 from database import Base
@@ -41,6 +41,8 @@ class Product(Base):
     unit = Column(Text)
     spec = Column(Text)
     current_stock = Column(REAL, default=0)
+    # v3.1: 产品批次号前缀规则（产品批次=生产记录本身，不建产品批次表）
+    production_batch_no_prefix = Column(Text)
     notes = Column(Text)
     created_at = Column(DateTime, default=now_cn)
     updated_at = Column(DateTime, default=now_cn, onupdate=now_cn)
@@ -212,4 +214,62 @@ class LabRecord(Base):
     score = Column(REAL)
     notes = Column(Text)
     operator = Column(Text)
+    created_at = Column(DateTime, default=now_cn)
+
+
+class MaterialBatch(Base):
+    """原料批次（v3.1）：采购入库时可选创建，生产按FEFO消耗。
+    未填批次的入库不建记录——历史"未分批"库存走兼容层。"""
+    __tablename__ = "material_batches"
+    __table_args__ = (UniqueConstraint("material_id", "batch_no", name="uq_batch_material_no"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    material_id = Column(Integer, ForeignKey("raw_materials.id"), nullable=False)
+    batch_no = Column(Text, nullable=False)
+    quantity_in = Column(REAL, nullable=False)
+    quantity_remaining = Column(REAL, nullable=False)
+    unit_price = Column(REAL)  # 本批进价，v3.2 成本核算（移动加权）直接用
+    production_date = Column(Date)  # 供应商标签上的生产日期
+    expiry_date = Column(Date)  # 保质期到，空=不管理
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"))
+    status = Column(Text, default="在库")  # 在库/耗尽/报废
+    notes = Column(Text)
+    created_at = Column(DateTime, default=now_cn)
+
+    material = relationship("RawMaterial")
+    supplier = relationship("Supplier")
+
+
+class BatchUsage(Base):
+    """批次消耗明细（v3.1）：一次生产消耗N个批次=N行。
+    设计依据：多批次消耗单字段外键装不下（CC提醒），用关联表。"""
+    __tablename__ = "batch_usages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    production_id = Column(Integer, ForeignKey("production_records.id"), nullable=False)
+    batch_id = Column(Integer, ForeignKey("material_batches.id"), nullable=False)
+    material_id = Column(Integer, ForeignKey("raw_materials.id"), nullable=False)
+    quantity = Column(REAL, nullable=False)
+    created_at = Column(DateTime, default=now_cn)
+
+    batch = relationship("MaterialBatch")
+
+
+class ReturnRecord(Base):
+    """销售退货（v3.2 预埋，本版只建表不建路由）：退回入库/报废退回两路径"""
+    __tablename__ = "return_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"))
+    sales_order_id = Column(Integer, ForeignKey("sales_orders.id"))
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    quantity = Column(REAL, nullable=False)
+    unit_price = Column(REAL)
+    total_amount = Column(REAL)
+    return_type = Column(Text, nullable=False)  # 退回入库 / 报废退回
+    product_batch_ref = Column(Text)  # 退回的是哪个生产批次（文本引用，轻量）
+    status = Column(Text, default="待处理")
+    operator = Column(Text)
+    notes = Column(Text)
     created_at = Column(DateTime, default=now_cn)

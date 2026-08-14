@@ -17,8 +17,8 @@ _code_store = {}
 def send_verify_code(phone: str) -> dict:
     """发送验证码，通过MirageX短信代理"""
     cached = _code_store.get(phone)
-    if cached and time.time() - cached["time"] < 60:
-        return {"ok": False, "msg": "发送太频繁，请60秒后重试"}
+    if cached and time.time() - cached["time"] < 30:
+        return {"ok": False, "msg": "发送太频繁，请30秒后重试"}
 
     if DEV_MODE:
         code = "123456"
@@ -26,7 +26,6 @@ def send_verify_code(phone: str) -> dict:
         _code_store[phone] = {
             "code": code,
             "time": time.time(),
-            "verified": False,
             "attempts": 0,
             "dev_mode": True,
         }
@@ -50,7 +49,6 @@ def send_verify_code(phone: str) -> dict:
         _code_store[phone] = {
             "code": None,  # 服务端管理
             "time": time.time(),
-            "verified": False,
             "attempts": 0,
             "dev_mode": False,
         }
@@ -101,14 +99,10 @@ def verify_code(phone: str, code: str) -> dict:
             logger.error(f"sms verify exception: {e}")
             return {"ok": False, "msg": "验证失败"}
 
-    cached["verified"] = True
-    cached.pop("code", None)
+    # 登录/注册成功：整条删除（码+条目）。
+    # 原来只 pop code 留条目，导致60秒内重发撞频控（条目还在窗口内）——v3.1修正
+    _code_store.pop(phone, None)
     return {"ok": True, "msg": "验证成功"}
-
-
-def is_phone_verified(phone: str) -> bool:
-    cached = _code_store.get(phone)
-    return bool(cached and cached["verified"])
 
 
 def _cleanup_expired():

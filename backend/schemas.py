@@ -141,6 +141,22 @@ class StockAdjustRequest(BaseModel):
     reason: str = Field(min_length=2, description="盘点原因必填（差异留痕）")
 
 
+# Purchase Item 批次信息（v3.1）：全可选——不填走"未分批"兼容层
+class PurchaseItemBatchInfo(BaseModel):
+    batch_no: Optional[str] = None      # 留空自动生成 YYYYMMDD-序号
+    production_date: Optional[date] = None
+    expiry_date: Optional[date] = None  # 空=不管理保质期
+
+
+class PurchaseItem(BaseModel):
+    material_id: int
+    quantity: float = Field(gt=0, description="采购数量必须大于0")
+    unit_price: float = Field(default=0, ge=0, description="单价不能为负")
+    batch_no: Optional[str] = None
+    production_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+
+
 class TransactionResponse(BaseModel):
     id: int
     transaction_type: str
@@ -384,12 +400,6 @@ class SalesOrderResponse(BaseModel):
 
 
 # Purchase Order
-class PurchaseItem(BaseModel):
-    material_id: int
-    quantity: float = Field(gt=0, description="采购数量必须大于0")
-    unit_price: float = Field(default=0, ge=0, description="单价不能为负")
-
-
 class PurchaseOrderCreate(BaseModel):
     date: date
     supplier_id: int
