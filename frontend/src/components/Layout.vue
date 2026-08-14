@@ -100,6 +100,9 @@
               <span>用户管理</span>
               <span v-if="pendingCount > 0" class="nav-badge">{{ pendingCount }}</span>
             </router-link>
+            <router-link to="/operation-logs" class="nav-item" :class="{ active: $route.path === '/operation-logs' }">
+              <span>操作日志</span>
+            </router-link>
           </div>
         </div>
       </nav>

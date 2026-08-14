@@ -30,6 +30,7 @@ const routes = [
       { path: 'lab', name: 'LabRecords', component: () => import('../views/LabRecords.vue') },
       { path: 'reports', name: 'Reports', component: () => import('../views/Reports.vue') },
       { path: 'users', name: 'Users', component: () => import('../views/UserManage.vue') },
+      { path: 'operation-logs', name: 'OperationLogs', component: () => import('../views/OperationLogs.vue') },
     ],
   },
 ]
@@ -45,6 +46,7 @@ router.beforeEach((to, from, next) => {
     localStorage.removeItem('displayName')
     localStorage.removeItem('roles')
     localStorage.removeItem('currentRole')
+    localStorage.removeItem('userRoles')
     document.cookie = 'access_token=; path=/; max-age=0'
     next('/login')
     return
@@ -54,6 +56,14 @@ router.beforeEach((to, from, next) => {
     next('/login')
   } else if ((to.path === '/login') && loggedIn) {
     next('/')
+  } else if (to.path === '/users' || to.path === '/operation-logs') {
+    // 敏感页仅 boss（后端 API 有 403 兜底，这里挡住直达 URL）
+    const role = localStorage.getItem('currentRole')
+    if (role !== 'boss') {
+      next('/')
+    } else {
+      next()
+    }
   } else {
     next()
   }
