@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, Text, Date, DateTime, ForeignKey, REAL
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from utils import now_cn
 from database import Base
 
 
@@ -12,7 +12,7 @@ class User(Base):
     display_name = Column(Text)
     roles = Column(Text, nullable=False, default='["clerk"]')
     status = Column(Text, default="approved")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
 
 
 class RawMaterial(Base):
@@ -28,8 +28,8 @@ class RawMaterial(Base):
     supplier_id = Column(Integer, nullable=True)
     purchase_price = Column(REAL, default=0)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
+    updated_at = Column(DateTime, default=now_cn, onupdate=now_cn)
 
 
 class Product(Base):
@@ -42,8 +42,8 @@ class Product(Base):
     spec = Column(Text)
     current_stock = Column(REAL, default=0)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
+    updated_at = Column(DateTime, default=now_cn, onupdate=now_cn)
 
 
 class InventoryTransaction(Base):
@@ -58,7 +58,7 @@ class InventoryTransaction(Base):
     related_id = Column(Integer, default=0)
     operator = Column(Text)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
 
     material = relationship("RawMaterial")
 
@@ -75,7 +75,7 @@ class ProductionRecord(Base):
     raw_materials_used = Column(Text)
     operator = Column(Text)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
 
     product = relationship("Product")
 
@@ -96,7 +96,7 @@ class ShipmentRecord(Base):
     status = Column(Text, default="待发货")
     operator = Column(Text)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
 
     product = relationship("Product")
     sales_order = relationship("SalesOrder")
@@ -112,7 +112,7 @@ class OperationLog(Base):
     table_name = Column(Text)
     record_id = Column(Integer)
     detail = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
 
 
 class Customer(Base):
@@ -126,8 +126,8 @@ class Customer(Base):
     type = Column(Text)
     level = Column(Text, default="普通")
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
+    updated_at = Column(DateTime, default=now_cn, onupdate=now_cn)
 
 
 class Supplier(Base):
@@ -140,8 +140,8 @@ class Supplier(Base):
     address = Column(Text)
     category = Column(Text)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
+    updated_at = Column(DateTime, default=now_cn, onupdate=now_cn)
 
 
 class SalesOrder(Base):
@@ -158,7 +158,7 @@ class SalesOrder(Base):
     paid_amount = Column(REAL, default=0)
     operator = Column(Text)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
 
     customer = relationship("Customer")
 
@@ -175,7 +175,7 @@ class PurchaseOrder(Base):
     status = Column(Text, default="待到货")
     operator = Column(Text)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)
 
     supplier = relationship("Supplier")
 
@@ -192,4 +192,4 @@ class LabRecord(Base):
     score = Column(REAL)
     notes = Column(Text)
     operator = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_cn)

@@ -4,6 +4,7 @@
       <h2 class="page-title">原料管理</h2>
       <div class="page-actions">
         <el-input v-model="search" placeholder="搜索原料..." clearable style="width: 200px" @clear="loadMaterials" @keyup.enter="loadMaterials" />
+        <el-button :loading="exporting" @click="handleExport">导出Excel</el-button>
         <el-button type="primary" @click="showAddDialog">新增原料</el-button>
       </div>
     </div>
@@ -100,7 +101,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getMaterials, createMaterial, inboundMaterial } from '../api'
+import { getMaterials, createMaterial, inboundMaterial, downloadExport } from '../api'
 import { ElMessage } from 'element-plus'
 
 const isMobile = ref(window.innerWidth <= 768)
@@ -111,6 +112,7 @@ const materials = ref([])
 const addDialogVisible = ref(false)
 const inboundDialogVisible = ref(false)
 const currentMaterial = ref(null)
+const exporting = ref(false)
 
 const categories = ['巧克力类', '油脂类', '果酱类', '乳制品', '粉类', '糖浆类', '添加剂']
 const units = ['kg', '桶', '件', '袋', '瓶']
@@ -141,6 +143,16 @@ async function handleAdd() {
     addDialogVisible.value = false
     loadMaterials()
   } catch (e) {}
+}
+
+async function handleExport() {
+  exporting.value = true
+  try {
+    await downloadExport('inventory', {}, '库存快照')
+    ElMessage.success('导出成功')
+  } catch (e) {} finally {
+    exporting.value = false
+  }
 }
 
 function openInbound(row) {

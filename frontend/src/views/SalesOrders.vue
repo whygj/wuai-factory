@@ -2,9 +2,12 @@
   <div class="page">
     <div class="page-header">
       <h2>销售发货</h2>
-      <el-button v-if="canEdit('sales')" type="primary" @click="openDialog()" size="large">
-        + 新增订单
-      </el-button>
+      <div style="display:flex; gap:8px;">
+        <el-button :loading="exporting" @click="handleExport" size="large">导出Excel</el-button>
+        <el-button v-if="canEdit('sales')" type="primary" @click="openDialog()" size="large">
+          + 新增订单
+        </el-button>
+      </div>
     </div>
 
     <div class="filter-bar">
@@ -199,7 +202,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getSalesOrders, createSalesOrder, recordPayment,
-  updateSalesOrderStatus, getOrderShipmentProgress, getCustomers, getProducts, canEdit,
+  updateSalesOrderStatus, getOrderShipmentProgress, getCustomers, getProducts, canEdit, downloadExport,
 } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -218,6 +221,7 @@ const dialogVisible = ref(false)
 const paymentDialogVisible = ref(false)
 const detailVisible = ref(false)
 const submitting = ref(false)
+const exporting = ref(false)
 const customerList = ref([])
 const productList = ref([])
 const detailOrder = ref(null)
@@ -295,6 +299,21 @@ async function handleSubmit() {
     loadData()
   } catch (e) {} finally {
     submitting.value = false
+  }
+}
+
+async function handleExport() {
+  exporting.value = true
+  try {
+    const params = {}
+    if (dateRange.value && dateRange.value.length === 2) {
+      params.start_date = dateRange.value[0]
+      params.end_date = dateRange.value[1]
+    }
+    await downloadExport('sales', params, '销售明细')
+    ElMessage.success('导出成功')
+  } catch (e) {} finally {
+    exporting.value = false
   }
 }
 

@@ -2,6 +2,7 @@
   <div class="page">
     <div class="page-header">
       <h2>应收款管理</h2>
+      <el-button :loading="exporting" @click="handleExport" size="large">导出Excel</el-button>
     </div>
 
     <div class="stats-cards">
@@ -187,7 +188,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import {
-  getReceivables, getOverdueReceivables, getReceivablesSummary, recordPayment, canEdit,
+  getReceivables, getOverdueReceivables, getReceivablesSummary, recordPayment, canEdit, downloadExport,
 } from '../api'
 import { ElMessage } from 'element-plus'
 
@@ -200,11 +201,22 @@ const overdueList = ref([])
 const summaryList = ref([])
 const paymentDialogVisible = ref(false)
 const submitting = ref(false)
+const exporting = ref(false)
 const paymentOrder = ref(null)
 const paymentForm = ref({ paid_amount: 0 })
 
 const totalUnpaid = computed(() => receivables.value.reduce((sum, r) => sum + (r.unpaid_amount || 0), 0))
 const overdueCount = computed(() => overdueList.value.length)
+
+async function handleExport() {
+  exporting.value = true
+  try {
+    await downloadExport('receivables', {}, '应收账款')
+    ElMessage.success('导出成功')
+  } catch (e) {} finally {
+    exporting.value = false
+  }
+}
 
 function paymentTagType(s) {
   const map = { '未付款': 'danger', '部分付款': 'warning', '已付款': 'success' }

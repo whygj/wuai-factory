@@ -4,6 +4,7 @@
       <h2 class="page-title">生产记录</h2>
       <div class="page-actions">
         <el-date-picker v-model="dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" @change="loadRecords" style="max-width: 300px" />
+        <el-button :loading="exporting" @click="handleExport">导出Excel</el-button>
         <el-button type="primary" @click="$router.push('/production/new')">新建记录</el-button>
       </div>
     </div>
@@ -42,10 +43,27 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getProduction } from '../api'
+import { getProduction, downloadExport } from '../api'
+import { ElMessage } from 'element-plus'
 
 const records = ref([])
 const dateRange = ref(null)
+const exporting = ref(false)
+
+async function handleExport() {
+  exporting.value = true
+  try {
+    const params = {}
+    if (dateRange.value && dateRange.value.length === 2) {
+      params.start_date = dateRange.value[0]
+      params.end_date = dateRange.value[1]
+    }
+    await downloadExport('production', params, '生产记录')
+    ElMessage.success('导出成功')
+  } catch (e) {} finally {
+    exporting.value = false
+  }
+}
 
 async function loadRecords() {
   try {
