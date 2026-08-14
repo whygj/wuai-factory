@@ -1,4 +1,7 @@
+import io
 import json
+import os
+from datetime import date
 from fastapi import FastAPI, Depends, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -13,11 +16,14 @@ import crud
 import schemas
 import sms
 
-app = FastAPI(title="五爱食品工厂管理系统", version="2.1.0")
+app = FastAPI(title="五爱食品工厂管理系统", version="3.0.0")
+
+# 允许的前端来源：默认同源部署（nginx 反代），跨域调用时用环境变量覆盖
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://wuai.agentmj.vip").split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://factory.agentmj.vip"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,6 +59,8 @@ def login(req: schemas.LoginRequest, response: Response, db: Session = Depends(g
         raise HTTPException(status_code=403, detail="账号待审核，请等待管理员通过")
     if user.status == "rejected":
         raise HTTPException(status_code=403, detail="账号未通过审核，请联系管理员")
+    if user.status == "disabled":
+        raise HTTPException(status_code=403, detail="账号已停用，请联系管理员")
 
     v = sms.verify_code(req.phone, req.code)
     if not v["ok"]:
@@ -193,7 +201,7 @@ def approve_user(user_id: int, current_user: User = Depends(get_current_user), c
     if current_role != "boss":
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        user = crud.approve_user(db, user_id)
+        user = crud.approve_user(db, user_id, current_user.display_name or current_user.phone)
         return {"ok": True, "id": user.id, "status": user.status}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -204,15 +212,36 @@ def reject_user(user_id: int, current_user: User = Depends(get_current_user), cu
     if current_role != "boss":
         raise HTTPException(status_code=403, detail="无权限")
     try:
-        user = crud.reject_user(db, user_id)
+        user = crud.reject_user(db, user_id, current_user.display_name or current_user.phone)
         return {"ok": True, "id": user.id, "status": user.status}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.put("/api/users/{user_id}")
+def update_user(
+    user_id: int,
+    data: schemas.UserUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        user = crud.update_user(db, user_id, data, current_user.display_name or current_user.phone)
+        return {
+            "ok": True, "id": user.id, "phone": user.phone,
+            "display_name": user.display_name, "roles": json.loads(user.roles), "status": user.status,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/api/operation-logs")
 def list_operation_logs(
     table_name: str = Query(""),
+    user_name: str = Query(""),
     start_date: str = Query(""),
     end_date: str = Query(""),
     page: int = Query(1),
@@ -223,7 +252,20 @@ def list_operation_logs(
 ):
     if current_role != "boss":
         raise HTTPException(status_code=403, detail="无权限")
-    return crud.get_operation_logs(db, table_name=table_name, start_date=start_date, end_date=end_date, page=page, page_size=page_size)
+    return crud.get_operation_logs(db, table_name=table_name, user_name=user_name,
+                                   start_date=start_date, end_date=end_date,
+                                   page=page, page_size=page_size)
+
+
+@app.get("/api/operation-logs/filters")
+def operation_log_filters(
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="无权限")
+    return crud.get_operation_log_filters(db)
 
 
 # ==================== Dashboard ====================
@@ -286,7 +328,7 @@ def create_material(
 ):
     if not check_write_permission(current_role, "inbound"):
         raise HTTPException(status_code=403, detail="无权限")
-    return crud.create_material(db, data)
+    return crud.create_material(db, data, current_user.display_name or current_user.phone)
 
 
 @app.put("/api/materials/{material_id}", response_model=schemas.MaterialResponse)
@@ -302,7 +344,7 @@ def update_material(
     material = crud.get_material(db, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="原料不存在")
-    return crud.update_material(db, material, data)
+    return crud.update_material(db, material, data, current_user.display_name or current_user.phone)
 
 
 @app.post("/api/materials/{material_id}/inbound", response_model=schemas.MaterialResponse)
@@ -354,7 +396,7 @@ def create_product(
 ):
     if not check_write_permission(current_role, "production"):
         raise HTTPException(status_code=403, detail="无权限")
-    return crud.create_product(db, data)
+    return crud.create_product(db, data, current_user.display_name or current_user.phone)
 
 
 @app.put("/api/products/{product_id}", response_model=schemas.ProductResponse)
@@ -370,7 +412,7 @@ def update_product(
     product = crud.get_product(db, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
-    return crud.update_product(db, product, data)
+    return crud.update_product(db, product, data, current_user.display_name or current_user.phone)
 
 
 # ==================== Production ====================
@@ -498,7 +540,7 @@ def create_customer(
 ):
     if not check_write_permission(current_role, "customer"):
         raise HTTPException(status_code=403, detail="无权限")
-    return crud.create_customer(db, data)
+    return crud.create_customer(db, data, current_user.display_name or current_user.phone)
 
 
 @app.put("/api/customers/{customer_id}", response_model=schemas.CustomerResponse)
@@ -514,7 +556,7 @@ def update_customer(
     customer = crud.get_customer(db, customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="客户不存在")
-    return crud.update_customer(db, customer, data)
+    return crud.update_customer(db, customer, data, current_user.display_name or current_user.phone)
 
 
 @app.delete("/api/customers/{customer_id}")
@@ -526,8 +568,11 @@ def delete_customer(
 ):
     if current_role != "boss":
         raise HTTPException(status_code=403, detail="仅老板可删除客户")
-    if not crud.delete_customer(db, customer_id):
-        raise HTTPException(status_code=404, detail="客户不存在")
+    try:
+        if not crud.delete_customer(db, customer_id):
+            raise HTTPException(status_code=404, detail="客户不存在")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
 
 
@@ -565,7 +610,7 @@ def create_supplier(
 ):
     if not check_write_permission(current_role, "supplier"):
         raise HTTPException(status_code=403, detail="无权限")
-    return crud.create_supplier(db, data)
+    return crud.create_supplier(db, data, current_user.display_name or current_user.phone)
 
 
 @app.put("/api/suppliers/{supplier_id}", response_model=schemas.SupplierResponse)
@@ -581,7 +626,7 @@ def update_supplier(
     supplier = crud.get_supplier(db, supplier_id)
     if not supplier:
         raise HTTPException(status_code=404, detail="供应商不存在")
-    return crud.update_supplier(db, supplier, data)
+    return crud.update_supplier(db, supplier, data, current_user.display_name or current_user.phone)
 
 
 @app.delete("/api/suppliers/{supplier_id}")
@@ -593,8 +638,11 @@ def delete_supplier(
 ):
     if current_role != "boss":
         raise HTTPException(status_code=403, detail="仅老板可删除供应商")
-    if not crud.delete_supplier(db, supplier_id):
-        raise HTTPException(status_code=404, detail="供应商不存在")
+    try:
+        if not crud.delete_supplier(db, supplier_id):
+            raise HTTPException(status_code=404, detail="供应商不存在")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
 
 
@@ -713,8 +761,9 @@ def record_payment(
     current_role: str = Depends(get_current_role),
     db: Session = Depends(get_db),
 ):
-    if not check_write_permission(current_role, "sales"):
-        raise HTTPException(status_code=403, detail="无权限")
+    # 需求权限矩阵：登记回款仅老板（内勤/班长均不可）
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="仅老板可登记回款")
     try:
         order = crud.record_payment(db, order_id, data, current_user.display_name or current_user.phone)
         return {"id": order.id, "payment_status": order.payment_status, "paid_amount": order.paid_amount}
@@ -871,7 +920,7 @@ def update_lab_record(
     record = crud.get_lab_record(db, record_id)
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
-    return crud.update_lab_record(db, record, data)
+    return crud.update_lab_record(db, record, data, current_user.display_name or current_user.phone)
 
 
 # ==================== Reports ====================
@@ -901,3 +950,74 @@ def inventory_report(
     db: Session = Depends(get_db),
 ):
     return crud.get_inventory_report(db)
+
+
+# ==================== Export (Excel) ====================
+
+from urllib.parse import quote
+from fastapi.responses import StreamingResponse
+import export_excel
+
+
+def _xlsx_response(content: bytes, filename: str) -> StreamingResponse:
+    # RFC 5987：中文文件名 URL 编码，防各浏览器乱码
+    encoded = quote(filename)
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded}",
+            "Content-Length": str(len(content)),
+        },
+    )
+
+
+@app.get("/api/export/sales")
+def export_sales(
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    today = date.today().strftime("%Y%m%d")
+    return _xlsx_response(export_excel.export_sales(db, start_date, end_date), f"销售明细_{today}.xlsx")
+
+
+@app.get("/api/export/purchases")
+def export_purchases(
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    today = date.today().strftime("%Y%m%d")
+    return _xlsx_response(export_excel.export_purchases(db, start_date, end_date), f"采购明细_{today}.xlsx")
+
+
+@app.get("/api/export/inventory")
+def export_inventory(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    today = date.today().strftime("%Y%m%d")
+    return _xlsx_response(export_excel.export_inventory(db), f"库存快照_{today}.xlsx")
+
+
+@app.get("/api/export/receivables")
+def export_receivables(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    today = date.today().strftime("%Y%m%d")
+    return _xlsx_response(export_excel.export_receivables(db), f"应收账款_{today}.xlsx")
+
+
+@app.get("/api/export/production")
+def export_production(
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    today = date.today().strftime("%Y%m%d")
+    return _xlsx_response(export_excel.export_production(db, start_date, end_date), f"生产记录_{today}.xlsx")

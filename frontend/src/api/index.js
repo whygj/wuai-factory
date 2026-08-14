@@ -9,12 +9,31 @@ const api = axios.create({
 })
 
 api.interceptors.response.use(
-  response => response.data,
+  response => {
+    // blob 导出不走 response.data 解包（返回原始 Blob 供下载）
+    if (response.config?.responseType === 'blob') return response
+    return response.data
+  },
   error => {
-    const msg = error.response?.data?.detail || '请求失败'
+    let msg = '请求失败'
     if (error.response?.status === 401) {
-      router.push('/login')
+      // 先清登录态再跳转，否则 router.beforeEach 看到 displayName 还在会把 /login 弹回 /，形成死循环
+      localStorage.removeItem('displayName')
+      localStorage.removeItem('currentRole')
+      localStorage.removeItem('userRoles')
+      if (router.currentRoute.value.path !== '/login') {
+        router.push('/login')
+      }
     }
+    // blob 请求的错误体也是 blob，读出来给提示
+    if (error.response?.data instanceof Blob) {
+      error.response.data.text().then(text => {
+        try { msg = JSON.parse(text).detail || msg } catch { /* 保持默认 */ }
+        ElMessage.error(msg)
+      })
+      return Promise.reject(error)
+    }
+    msg = error.response?.data?.detail || msg
     ElMessage.error(msg)
     return Promise.reject(error)
   }
@@ -34,6 +53,7 @@ export const getPendingUsersApi = () => api.get('/users/pending')
 export const getAllUsersApi = () => api.get('/users')
 export const approveUserApi = (id) => api.post(`/users/${id}/approve`)
 export const rejectUserApi = (id) => api.post(`/users/${id}/reject`)
+export const updateUserApi = (id, data) => api.put(`/users/${id}`, data)
 
 // Dashboard
 export const getDashboard = () => api.get('/dashboard/overview')
@@ -116,11 +136,33 @@ export const getInventoryReport = () => api.get('/reports/inventory')
 // Quick Search
 export const quickSearch = (params) => api.get('/quick-search', { params })
 
+// Operation Logs
+export const getOperationLogs = (params) => api.get('/operation-logs', { params })
+export const getOperationLogFilters = () => api.get('/operation-logs/filters')
+
+// Export (Excel) — blob 下载，独立实例避免响应拦截器把二进制当 JSON
+export function exportExcel(module, params = {}) {
+  return api.get(`/export/${module}`, { params, responseType: 'blob', timeout: 30000 })
+}
+
+export async function downloadExport(module, params = {}, filenamePrefix = module) {
+  const res = await exportExcel(module, params)
+  const url = window.URL.createObjectURL(new Blob([res]))
+  const link = document.createElement('a')
+  link.href = url
+  const today = new Date().toISOString().slice(0, 10)
+  link.download = `${filenamePrefix}_${today}.xlsx`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
 // Permission helper
 export function canEdit(module) {
   const role = localStorage.getItem('currentRole')
   if (role === 'boss') return true
-  if (role === 'clerk') return ['customer', 'supplier', 'purchase', 'inbound', 'production', 'sales', 'shipment', 'lab'].includes(module)
+  if (role === 'clerk') return ['customer', 'supplier', 'purchase', 'inbound', 'production', 'product', 'sales', 'shipment', 'lab'].includes(module)
   if (role === 'leader') return ['production', 'lab'].includes(module)
   return false
 }

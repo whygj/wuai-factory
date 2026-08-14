@@ -8,10 +8,37 @@ from fastapi import Depends, HTTPException, status, Response, Request, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from database import get_db
+from database import get_db, DB_PATH
 from models import User
 
-SECRET_KEY = os.environ.get("JWT_SECRET", secrets.token_urlsafe(32))
+
+def _load_or_create_secret() -> str:
+    """优先环境变量；否则用 data/ 目录下的持久密钥文件（重启不掉线）。
+    密钥文件与数据库同目录，data/ 已在 .gitignore，不会进仓库。"""
+    env = os.environ.get("JWT_SECRET")
+    if env:
+        return env
+    secret_file = os.path.join(os.path.dirname(DB_PATH), ".jwt_secret")
+    try:
+        if os.path.exists(secret_file):
+            with open(secret_file, "r") as f:
+                cached = f.read().strip()
+                if cached:
+                    return cached
+        fresh = secrets.token_urlsafe(32)
+        with open(secret_file, "w") as f:
+            f.write(fresh)
+        try:
+            os.chmod(secret_file, 0o600)
+        except OSError:
+            pass
+        return fresh
+    except OSError:
+        # 文件系统不可写时退化为随机值（保持原行为，重启会掉线）
+        return secrets.token_urlsafe(32)
+
+
+SECRET_KEY = _load_or_create_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 
@@ -37,6 +64,9 @@ def _decode_token(token: str, db: Session) -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    # 停用/拒绝的账号即使 token 未过期也立即失效
+    if user.status != "approved":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号已停用")
     return user
 
 
@@ -76,7 +106,7 @@ def get_current_role(
 
 WRITE_PERMISSIONS = {
     "boss": set(),
-    "clerk": {"customer", "supplier", "purchase", "inbound", "production", "sales", "shipment", "lab"},
+    "clerk": {"customer", "supplier", "purchase", "inbound", "production", "product", "sales", "shipment", "lab"},
     "leader": {"production", "lab"},
 }
 

@@ -1,5 +1,6 @@
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
+from utils import now_cn
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -30,17 +31,29 @@ def log_operation(db: Session, user_name: str, action: str, table_name: str, rec
     db.add(log)
 
 
-def get_operation_logs(db: Session, table_name: str = "", start_date: str = "", end_date: str = "", page: int = 1, page_size: int = 50):
+def get_operation_logs(db: Session, table_name: str = "", user_name: str = "", start_date: str = "", end_date: str = "", page: int = 1, page_size: int = 50):
     query = db.query(OperationLog)
     if table_name:
         query = query.filter(OperationLog.table_name == table_name)
+    if user_name:
+        query = query.filter(OperationLog.user_name.contains(user_name))
     if start_date:
         query = query.filter(OperationLog.created_at >= start_date)
     if end_date:
+        # end_date 只给日期时含当天结束
+        if len(end_date) == 10:
+            end_date += " 23:59:59"
         query = query.filter(OperationLog.created_at <= end_date)
     total = query.count()
     items = query.order_by(OperationLog.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"total": total, "items": items}
+
+
+def get_operation_log_filters(db: Session):
+    """日志筛选下拉选项：去重后的表名和操作人"""
+    tables = [r[0] for r in db.query(OperationLog.table_name).distinct().all() if r[0]]
+    users = [r[0] for r in db.query(OperationLog.user_name).distinct().all() if r[0]]
+    return {"tables": tables, "users": users}
 
 
 # ==================== Users ====================
@@ -58,21 +71,23 @@ def register_user(db: Session, phone: str, display_name: str, role: str) -> User
     return user
 
 
-def approve_user(db: Session, user_id: int) -> User:
+def approve_user(db: Session, user_id: int, operator: str = "") -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise ValueError("用户不存在")
     user.status = "approved"
+    log_operation(db, operator, "审核通过用户", "users", user_id, f"{user.display_name or user.phone}")
     db.commit()
     db.refresh(user)
     return user
 
 
-def reject_user(db: Session, user_id: int) -> User:
+def reject_user(db: Session, user_id: int, operator: str = "") -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise ValueError("用户不存在")
     user.status = "rejected"
+    log_operation(db, operator, "拒绝用户注册", "users", user_id, f"{user.display_name or user.phone}")
     db.commit()
     db.refresh(user)
     return user
@@ -84,6 +99,34 @@ def get_pending_users(db: Session):
 
 def get_all_users(db: Session):
     return db.query(User).order_by(User.id.desc()).all()
+
+
+def update_user(db: Session, user_id: int, data, operator: str = "") -> User:
+    """boss 编辑用户：改姓名/角色/状态（停用即时生效——auth 校验 status）"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise ValueError("用户不存在")
+    changes = []
+    if data.display_name is not None and data.display_name != user.display_name:
+        changes.append(f"姓名 {user.display_name or ''}->{data.display_name}")
+        user.display_name = data.display_name
+    if data.roles is not None and data.roles != json.loads(user.roles):
+        # 防呆：不能移除最后一个 boss（否则没人能管理系统）
+        old_roles = json.loads(user.roles)
+        if "boss" in old_roles and "boss" not in data.roles:
+            boss_count = sum(1 for u in db.query(User.roles).all() if "boss" in json.loads(u.roles))
+            if boss_count <= 1:
+                raise ValueError("系统至少需要保留一个老板角色")
+        changes.append(f"角色 {old_roles}->{data.roles}")
+        user.roles = json.dumps(data.roles, ensure_ascii=False)
+    if data.status is not None and data.status != user.status:
+        changes.append(f"状态 {user.status}->{data.status}")
+        user.status = data.status
+    if changes:
+        log_operation(db, operator, "修改用户", "users", user_id, "；".join(changes))
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 # ==================== Materials ====================
@@ -101,18 +144,21 @@ def get_material(db: Session, material_id: int) -> Optional[RawMaterial]:
     return db.query(RawMaterial).filter(RawMaterial.id == material_id).first()
 
 
-def create_material(db: Session, data: MaterialCreate) -> RawMaterial:
+def create_material(db: Session, data: MaterialCreate, operator: str = "") -> RawMaterial:
     material = RawMaterial(**data.model_dump())
     db.add(material)
+    db.flush()
+    log_operation(db, operator, "新增原料", "raw_materials", material.id, f"{material.name}")
     db.commit()
     db.refresh(material)
     return material
 
 
-def update_material(db: Session, material: RawMaterial, data: MaterialUpdate) -> RawMaterial:
+def update_material(db: Session, material: RawMaterial, data: MaterialUpdate, operator: str = "") -> RawMaterial:
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(material, key, value)
-    material.updated_at = datetime.utcnow()
+    material.updated_at = now_cn()
+    log_operation(db, operator, "修改原料", "raw_materials", material.id, f"{material.name}")
     db.commit()
     db.refresh(material)
     return material
@@ -124,7 +170,7 @@ def inbound_material(db: Session, material_id: int, data: InboundRequest, operat
         raise ValueError("原料不存在")
 
     material.current_stock += data.quantity
-    material.updated_at = datetime.utcnow()
+    material.updated_at = now_cn()
 
     transaction = InventoryTransaction(
         transaction_type="in",
@@ -177,18 +223,21 @@ def get_product(db: Session, product_id: int) -> Optional[Product]:
     return db.query(Product).filter(Product.id == product_id).first()
 
 
-def create_product(db: Session, data: ProductCreate) -> Product:
+def create_product(db: Session, data: ProductCreate, operator: str = "") -> Product:
     product = Product(**data.model_dump())
     db.add(product)
+    db.flush()
+    log_operation(db, operator, "新增产品", "products", product.id, f"{product.name}")
     db.commit()
     db.refresh(product)
     return product
 
 
-def update_product(db: Session, product: Product, data: ProductUpdate) -> Product:
+def update_product(db: Session, product: Product, data: ProductUpdate, operator: str = "") -> Product:
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(product, key, value)
-    product.updated_at = datetime.utcnow()
+    product.updated_at = now_cn()
+    log_operation(db, operator, "修改产品", "products", product.id, f"{product.name}")
     db.commit()
     db.refresh(product)
     return product
@@ -204,6 +253,7 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
 
         materials_used = data.raw_materials_used or []
         materials_json = json.dumps([m.model_dump() for m in materials_used], ensure_ascii=False)
+        transactions = []
 
         for usage in materials_used:
             material = db.query(RawMaterial).filter(RawMaterial.id == usage.material_id).with_for_update().first()
@@ -212,7 +262,7 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
             if material.current_stock < usage.quantity:
                 raise ValueError(f"原料 {material.name} 库存不足（当前: {material.current_stock}，需要: {usage.quantity}）")
             material.current_stock -= usage.quantity
-            material.updated_at = datetime.utcnow()
+            material.updated_at = now_cn()
 
             transaction = InventoryTransaction(
                 transaction_type="out",
@@ -225,9 +275,10 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
                 notes="生产消耗",
             )
             db.add(transaction)
+            transactions.append(transaction)
 
         product.current_stock += data.quantity
-        product.updated_at = datetime.utcnow()
+        product.updated_at = now_cn()
 
         record = ProductionRecord(
             date=data.date,
@@ -242,11 +293,10 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
         db.add(record)
         db.flush()
 
-        db.query(InventoryTransaction).filter(
-            InventoryTransaction.source == "production",
-            InventoryTransaction.related_id == 0,
-            InventoryTransaction.operator == operator,
-        ).update({"related_id": record.id})
+        # 直接对象赋值回填，不走批量 UPDATE（批量 UPDATE 的 filter 会误伤并发场景下
+        # 同一操作员另一笔未回填的事务）
+        for t in transactions:
+            t.related_id = record.id
 
         log_operation(db, operator, "生产登记", "production_records", record.id, f"生产 {product.name} {data.quantity}{data.unit or product.unit}")
         db.commit()
@@ -324,7 +374,7 @@ def create_shipment(db: Session, data: ShipmentCreate, operator: str) -> Shipmen
                 raise ValueError(f"发货数量超过订单剩余量（订单量: {ordered_qty}，已发: {already_shipped}，剩余: {remaining}）")
 
         product.current_stock -= data.quantity
-        product.updated_at = datetime.utcnow()
+        product.updated_at = now_cn()
 
         total_amount = data.quantity * data.unit_price if data.unit_price else 0
 
@@ -400,12 +450,25 @@ def get_shipments(db: Session, status: str = "", page: int = 1, page_size: int =
     return {"total": total, "items": result}
 
 
+# 发货记录合法状态迁移（只能向前推进）
+SHIPMENT_TRANSITIONS = {
+    "待发货": {"已发货", "已签收"},
+    "已发货": {"已签收"},
+    "已签收": set(),
+}
+
+
 def update_shipment_status(db: Session, record_id: int, data: ShipmentStatusUpdate, operator: str) -> ShipmentRecord:
     record = db.query(ShipmentRecord).filter(ShipmentRecord.id == record_id).first()
     if not record:
         raise ValueError("发货记录不存在")
     if data.status not in ("待发货", "已发货", "已签收"):
         raise ValueError("无效状态")
+    if data.status == record.status:
+        return record
+    allowed = SHIPMENT_TRANSITIONS.get(record.status, set())
+    if data.status not in allowed:
+        raise ValueError(f"发货状态不能从「{record.status}」改为「{data.status}」")
     record.status = data.status
     log_operation(db, operator, f"发货状态更新为{data.status}", "shipment_records", record_id)
 
@@ -446,18 +509,21 @@ def get_customer(db: Session, customer_id: int) -> Optional[Customer]:
     return db.query(Customer).filter(Customer.id == customer_id).first()
 
 
-def create_customer(db: Session, data: CustomerCreate) -> Customer:
+def create_customer(db: Session, data: CustomerCreate, operator: str = "") -> Customer:
     customer = Customer(**data.model_dump())
     db.add(customer)
+    db.flush()
+    log_operation(db, operator, "新增客户", "customers", customer.id, f"{customer.name}")
     db.commit()
     db.refresh(customer)
     return customer
 
 
-def update_customer(db: Session, customer: Customer, data: CustomerUpdate) -> Customer:
+def update_customer(db: Session, customer: Customer, data: CustomerUpdate, operator: str = "") -> Customer:
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(customer, key, value)
-    customer.updated_at = datetime.utcnow()
+    customer.updated_at = now_cn()
+    log_operation(db, operator, "修改客户", "customers", customer.id, f"{customer.name}")
     db.commit()
     db.refresh(customer)
     return customer
@@ -467,7 +533,12 @@ def delete_customer(db: Session, customer_id: int) -> bool:
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         return False
+    order_count = db.query(func.count(SalesOrder.id)).filter(SalesOrder.customer_id == customer_id).scalar()
+    ship_count = db.query(func.count(ShipmentRecord.id)).filter(ShipmentRecord.customer_id == customer_id).scalar()
+    if order_count > 0 or ship_count > 0:
+        raise ValueError(f"该客户有 {order_count} 笔销售订单、{ship_count} 条发货记录，无法删除（历史数据需保留）")
     db.delete(customer)
+    log_operation(db, "系统", "删除客户", "customers", customer_id, f"{customer.name}")
     db.commit()
     return True
 
@@ -525,18 +596,21 @@ def get_supplier(db: Session, supplier_id: int) -> Optional[Supplier]:
     return db.query(Supplier).filter(Supplier.id == supplier_id).first()
 
 
-def create_supplier(db: Session, data: SupplierCreate) -> Supplier:
+def create_supplier(db: Session, data: SupplierCreate, operator: str = "") -> Supplier:
     supplier = Supplier(**data.model_dump())
     db.add(supplier)
+    db.flush()
+    log_operation(db, operator, "新增供应商", "suppliers", supplier.id, f"{supplier.name}")
     db.commit()
     db.refresh(supplier)
     return supplier
 
 
-def update_supplier(db: Session, supplier: Supplier, data: SupplierUpdate) -> Supplier:
+def update_supplier(db: Session, supplier: Supplier, data: SupplierUpdate, operator: str = "") -> Supplier:
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(supplier, key, value)
-    supplier.updated_at = datetime.utcnow()
+    supplier.updated_at = now_cn()
+    log_operation(db, operator, "修改供应商", "suppliers", supplier.id, f"{supplier.name}")
     db.commit()
     db.refresh(supplier)
     return supplier
@@ -546,7 +620,12 @@ def delete_supplier(db: Session, supplier_id: int) -> bool:
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
     if not supplier:
         return False
+    po_count = db.query(func.count(PurchaseOrder.id)).filter(PurchaseOrder.supplier_id == supplier_id).scalar()
+    material_count = db.query(func.count(RawMaterial.id)).filter(RawMaterial.supplier_id == supplier_id).scalar()
+    if po_count > 0 or material_count > 0:
+        raise ValueError(f"该供应商有 {po_count} 笔采购单、{material_count} 种关联原料，无法删除（历史数据需保留）")
     db.delete(supplier)
+    log_operation(db, "系统", "删除供应商", "suppliers", supplier_id, f"{supplier.name}")
     db.commit()
     return True
 
@@ -674,12 +753,33 @@ def get_order_shipment_progress(db: Session, order_id: int):
     return {"progress": progress, "shipments": shipment_list}
 
 
+# 销售订单合法状态迁移（终态不可逆，防"已签收改回待发货"再走一遍流程）
+SALES_ORDER_TRANSITIONS = {
+    "待发货": {"部分发货", "已发货", "已取消"},
+    "部分发货": {"已发货", "已取消"},
+    "已发货": {"已签收"},
+    "已签收": set(),
+    "已取消": set(),
+}
+
+
 def update_sales_order_status(db: Session, order_id: int, data: SalesOrderStatusUpdate, operator: str) -> SalesOrder:
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise ValueError("订单不存在")
     if data.status not in ("待发货", "部分发货", "已发货", "已签收", "已取消"):
         raise ValueError("无效状态")
+    if data.status == order.status:
+        return order
+    allowed = SALES_ORDER_TRANSITIONS.get(order.status, set())
+    if data.status not in allowed:
+        raise ValueError(f"订单状态不能从「{order.status}」改为「{data.status}」")
+    if data.status == "已取消":
+        shipped = db.query(func.coalesce(func.sum(ShipmentRecord.quantity), 0)).filter(
+            ShipmentRecord.sales_order_id == order_id,
+        ).scalar()
+        if shipped > 0:
+            raise ValueError("该订单已有发货记录，不能取消（可联系负责人处理发货单）")
     order.status = data.status
     log_operation(db, operator, f"销售订单状态更新为{data.status}", "sales_orders", order_id)
     db.commit()
@@ -691,7 +791,14 @@ def record_payment(db: Session, order_id: int, data: PaymentRequest, operator: s
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise ValueError("订单不存在")
-    order.paid_amount += data.paid_amount
+    if order.status == "已取消":
+        raise ValueError("订单已取消，无法登记回款")
+    unpaid = round(order.total_amount - order.paid_amount, 2)
+    if unpaid <= 0:
+        raise ValueError("该订单已全额付款")
+    if data.paid_amount > unpaid:
+        raise ValueError(f"回款金额超过未付余额（未付: {unpaid}）")
+    order.paid_amount = round(order.paid_amount + data.paid_amount, 2)
     if order.paid_amount >= order.total_amount:
         order.payment_status = "已付款"
         order.paid_amount = order.total_amount
@@ -835,12 +942,29 @@ def get_purchase_order(db: Session, order_id: int):
     }
 
 
+# 采购单合法状态迁移（已入库是终态——库存已加，改回待到货可再次入库导致库存翻倍）
+PURCHASE_TRANSITIONS = {
+    "待到货": {"已到货", "已入库", "已取消"},
+    "已到货": {"已入库", "已取消"},
+    "已入库": set(),
+    "已取消": set(),
+}
+
+
 def update_purchase_status(db: Session, order_id: int, data: PurchaseStatusUpdate, operator: str) -> PurchaseOrder:
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise ValueError("采购单不存在")
     if data.status not in ("待到货", "已到货", "已入库", "已取消"):
         raise ValueError("无效状态")
+    if data.status == order.status:
+        return order
+    allowed = PURCHASE_TRANSITIONS.get(order.status, set())
+    if data.status not in allowed:
+        raise ValueError(f"采购单状态不能从「{order.status}」改为「{data.status}」")
+    if data.status == "已入库":
+        # 手动直接改"已入库"不经过入库事务会绕过库存增加，禁止；必须走 confirm_inbound
+        raise ValueError("请使用「确认入库」按钮完成入库（会自动增加原料库存）")
     order.status = data.status
     log_operation(db, operator, f"采购单状态更新为{data.status}", "purchase_orders", order_id)
     db.commit()
@@ -863,7 +987,7 @@ def confirm_inbound(db: Session, order_id: int, operator: str) -> PurchaseOrder:
         if not material:
             raise ValueError(f"原料 {item.get('material_name', item['material_id'])} 不存在")
         material.current_stock += item["quantity"]
-        material.updated_at = datetime.utcnow()
+        material.updated_at = now_cn()
 
         transaction = InventoryTransaction(
             transaction_type="in",
@@ -1161,9 +1285,10 @@ def create_lab_record(db: Session, data: LabRecordCreate, operator: str) -> LabR
     return record
 
 
-def update_lab_record(db: Session, record: LabRecord, data: LabRecordUpdate) -> LabRecord:
+def update_lab_record(db: Session, record: LabRecord, data: LabRecordUpdate, operator: str = "") -> LabRecord:
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(record, key, value)
+    log_operation(db, operator, "修改试验记录", "lab_records", record.id, f"试验 {record.name} -> {record.result or '待测'}")
     db.commit()
     db.refresh(record)
     return record

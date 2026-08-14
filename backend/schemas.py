@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import date, datetime
 import re
@@ -44,6 +44,30 @@ class RegisterRequest(BaseModel):
 
 class RoleSelectRequest(BaseModel):
     role: str
+
+
+class UserUpdateRequest(BaseModel):
+    display_name: Optional[str] = None
+    roles: Optional[List[str]] = None
+    status: Optional[str] = None
+
+    @field_validator("roles")
+    @classmethod
+    def validate_roles(cls, v):
+        if v is not None:
+            if not v:
+                raise ValueError("角色不能为空")
+            for r in v:
+                if r not in ("boss", "clerk", "leader"):
+                    raise ValueError(f"无效角色: {r}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v is not None and v not in ("approved", "disabled", "pending", "rejected"):
+            raise ValueError("无效状态")
+        return v
 
 
 class TokenResponse(BaseModel):
@@ -105,7 +129,7 @@ class MaterialResponse(BaseModel):
 
 
 class InboundRequest(BaseModel):
-    quantity: float
+    quantity: float = Field(gt=0, description="入库数量必须大于0")
     unit: Optional[str] = None
     supplier: Optional[str] = None
     notes: Optional[str] = None
@@ -162,14 +186,14 @@ class ProductResponse(BaseModel):
 # Production
 class MaterialUsage(BaseModel):
     material_id: int
-    quantity: float
+    quantity: float = Field(gt=0, description="耗料数量必须大于0")
     unit: Optional[str] = None
 
 
 class ProductionCreate(BaseModel):
     date: date
     product_id: int
-    quantity: float
+    quantity: float = Field(gt=0, description="生产数量必须大于0")
     unit: Optional[str] = None
     sugar_degree: Optional[float] = None
     raw_materials_used: Optional[List[MaterialUsage]] = None
@@ -199,9 +223,9 @@ class ShipmentCreate(BaseModel):
     customer_name: str
     customer_id: Optional[int] = None
     product_id: int
-    quantity: float
+    quantity: float = Field(gt=0, description="发货数量必须大于0")
     unit: Optional[str] = None
-    unit_price: Optional[float] = None
+    unit_price: Optional[float] = Field(default=None, ge=0, description="单价不能为负")
     sales_order_id: Optional[int] = None
     notes: Optional[str] = None
 
@@ -315,8 +339,8 @@ class DashboardOverview(BaseModel):
 # Sales Order
 class OrderItem(BaseModel):
     product_id: int
-    quantity: float
-    unit_price: float = 0
+    quantity: float = Field(gt=0, description="数量必须大于0")
+    unit_price: float = Field(default=0, ge=0, description="单价不能为负")
 
 
 class SalesOrderCreate(BaseModel):
@@ -331,7 +355,7 @@ class SalesOrderStatusUpdate(BaseModel):
 
 
 class PaymentRequest(BaseModel):
-    paid_amount: float
+    paid_amount: float = Field(gt=0, description="回款金额必须大于0")
 
 
 class SalesOrderResponse(BaseModel):
@@ -356,8 +380,8 @@ class SalesOrderResponse(BaseModel):
 # Purchase Order
 class PurchaseItem(BaseModel):
     material_id: int
-    quantity: float
-    unit_price: float = 0
+    quantity: float = Field(gt=0, description="采购数量必须大于0")
+    unit_price: float = Field(default=0, ge=0, description="单价不能为负")
 
 
 class PurchaseOrderCreate(BaseModel):
