@@ -89,6 +89,9 @@
             <router-link to="/receivables" class="nav-item" :class="{ active: $route.path === '/receivables' }">
               <span>应收款</span>
             </router-link>
+            <router-link to="/payables" class="nav-item" :class="{ active: $route.path === '/payables' }">
+              <span>应付款</span>
+            </router-link>
           </div>
         </div>
 

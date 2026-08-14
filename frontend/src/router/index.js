@@ -27,6 +27,7 @@ const routes = [
       { path: 'sales-orders', name: 'SalesOrders', component: () => import('../views/SalesOrders.vue') },
       { path: 'purchases', name: 'Purchases', component: () => import('../views/Purchases.vue') },
       { path: 'receivables', name: 'Receivables', component: () => import('../views/Receivables.vue') },
+      { path: 'payables', name: 'Payables', component: () => import('../views/Payables.vue') },
       { path: 'lab', name: 'LabRecords', component: () => import('../views/LabRecords.vue') },
       { path: 'batch-trace', name: 'BatchTrace', component: () => import('../views/BatchTrace.vue') },
       { path: 'reports', name: 'Reports', component: () => import('../views/Reports.vue') },

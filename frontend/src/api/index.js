@@ -145,6 +145,18 @@ export const previewBatchUsage = (materialId, quantity) => api.get('/batches/pre
 export const traceBatchForward = (batchId) => api.get(`/batches/${batchId}/trace-forward`)
 export const traceProductionBackward = (productionId) => api.get(`/production/${productionId}/trace-backward`)
 
+// Purchase Payments & Payables (v3.2)
+export const addPurchasePayment = (orderId, data) => api.post(`/purchases/${orderId}/payments`, data)
+export const getPurchasePayments = (orderId) => api.get(`/purchases/${orderId}/payments`)
+export const voidPurchasePayment = (paymentId) => api.put(`/purchase-payments/${paymentId}/void`)
+export const getPayablesSummary = () => api.get('/payables/summary')
+export const getPayables = (params) => api.get('/payables', { params })
+
+// Sales Returns (v3.2)
+export const createReturn = (data) => api.post('/returns', data)
+export const voidReturn = (id) => api.put(`/returns/${id}/void`)
+export const getOrderReturns = (orderId) => api.get(`/sales-orders/${orderId}/returns`)
+
 // Operation Logs
 export const getOperationLogs = (params) => api.get('/operation-logs', { params })
 export const getOperationLogFilters = () => api.get('/operation-logs/filters')

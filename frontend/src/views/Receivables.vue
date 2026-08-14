@@ -2,7 +2,10 @@
   <div class="page">
     <div class="page-header">
       <h2>应收款管理</h2>
-      <el-button :loading="exporting" @click="handleExport" size="large">导出Excel</el-button>
+      <div style="display:flex; gap:8px;">
+        <el-button v-if="canEdit('sales')" @click="goReturn" size="large">登记退货</el-button>
+        <el-button :loading="exporting" @click="handleExport" size="large">导出Excel</el-button>
+      </div>
     </div>
 
     <div class="stats-cards">
@@ -42,7 +45,8 @@
           </el-table-column>
           <el-table-column label="未付金额" width="120" align="right">
             <template #default="{ row }">
-              <span style="color: #E65100; font-weight: 600;">¥{{ (row.unpaid_amount || 0).toFixed(2) }}</span>
+              <span v-if="row.unpaid_amount < 0" style="color: #C62828; font-weight: 700;">应退款 ¥{{ (-row.unpaid_amount).toFixed(2) }}</span>
+              <span v-else style="color: #E65100; font-weight: 600;">¥{{ (row.unpaid_amount || 0).toFixed(2) }}</span>
             </template>
           </el-table-column>
           <el-table-column label="付款状态" width="110" align="center">
@@ -72,7 +76,8 @@
               <span style="color: #67c23a;">已付: ¥{{ (item.paid_amount || 0).toFixed(2) }}</span>
             </div>
             <div class="card-info">
-              <span style="color: #E65100; font-weight: 600;">未付: ¥{{ (item.unpaid_amount || 0).toFixed(2) }}</span>
+              <span v-if="item.unpaid_amount < 0" style="color: #C62828; font-weight: 700;">应退款: ¥{{ (-item.unpaid_amount).toFixed(2) }}</span>
+              <span v-else style="color: #E65100; font-weight: 600;">未付: ¥{{ (item.unpaid_amount || 0).toFixed(2) }}</span>
             </div>
             <div class="card-actions">
               <el-button v-if="canEdit('sales')" size="small" type="primary" @click="openPaymentDialog(item)">登记回款</el-button>
@@ -88,7 +93,8 @@
           <el-table-column prop="customer_name" label="客户" min-width="140" />
           <el-table-column label="未付金额" width="120" align="right">
             <template #default="{ row }">
-              <span style="color: #f56c6c; font-weight: 600;">¥{{ (row.unpaid_amount || 0).toFixed(2) }}</span>
+              <span v-if="row.unpaid_amount < 0" style="color: #C62828; font-weight: 700;">应退款 ¥{{ (-row.unpaid_amount).toFixed(2) }}</span>
+              <span v-else style="color: #f56c6c; font-weight: 600;">¥{{ (row.unpaid_amount || 0).toFixed(2) }}</span>
             </template>
           </el-table-column>
           <el-table-column label="逾期天数" width="100" align="center">
@@ -114,7 +120,8 @@
               <span>{{ item.date }}</span>
             </div>
             <div class="card-info">
-              <span style="color: #f56c6c; font-weight: 600;">未付: ¥{{ (item.unpaid_amount || 0).toFixed(2) }}</span>
+              <span v-if="item.unpaid_amount < 0" style="color: #C62828; font-weight: 700;">应退款: ¥{{ (-item.unpaid_amount).toFixed(2) }}</span>
+              <span v-else style="color: #f56c6c; font-weight: 600;">未付: ¥{{ (item.unpaid_amount || 0).toFixed(2) }}</span>
             </div>
             <div class="card-actions">
               <el-button v-if="canEdit('sales')" size="small" type="primary" @click="openPaymentDialog(item)">登记回款</el-button>
@@ -136,7 +143,8 @@
           </el-table-column>
           <el-table-column label="未付金额" width="140" align="right">
             <template #default="{ row }">
-              <span style="color: #E65100; font-weight: 600;">¥{{ (row.unpaid_amount || 0).toFixed(2) }}</span>
+              <span v-if="row.unpaid_amount < 0" style="color: #C62828; font-weight: 700;">应退款 ¥{{ (-row.unpaid_amount).toFixed(2) }}</span>
+              <span v-else style="color: #E65100; font-weight: 600;">¥{{ (row.unpaid_amount || 0).toFixed(2) }}</span>
             </template>
           </el-table-column>
         </el-table>
@@ -151,7 +159,8 @@
             </div>
             <div class="card-info">
               <span style="color: #67c23a;">已付: ¥{{ (item.paid_amount || 0).toFixed(2) }}</span>
-              <span style="color: #E65100; font-weight: 600;">未付: ¥{{ (item.unpaid_amount || 0).toFixed(2) }}</span>
+              <span v-if="item.unpaid_amount < 0" style="color: #C62828; font-weight: 700;">应退款: ¥{{ (-item.unpaid_amount).toFixed(2) }}</span>
+              <span v-else style="color: #E65100; font-weight: 600;">未付: ¥{{ (item.unpaid_amount || 0).toFixed(2) }}</span>
             </div>
           </div>
         </div>
@@ -187,10 +196,17 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   getReceivables, getOverdueReceivables, getReceivablesSummary, recordPayment, canEdit, downloadExport,
 } from '../api'
 import { ElMessage } from 'element-plus'
+
+const router = useRouter()
+
+function goReturn() {
+  router.push('/sales-orders')
+}
 
 const isMobile = ref(window.innerWidth <= 768)
 window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })

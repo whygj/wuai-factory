@@ -97,6 +97,9 @@
             <router-link to="/receivables" class="grid-item" @click="showMore = false">
               <span class="grid-icon">💰</span><span>应收款</span>
             </router-link>
+            <router-link to="/payables" class="grid-item" @click="showMore = false">
+              <span class="grid-icon">🧾</span><span>应付款</span>
+            </router-link>
           </div>
         </div>
 

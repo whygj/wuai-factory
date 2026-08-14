@@ -45,11 +45,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="operator" label="操作人" width="100" />
-      <el-table-column label="操作" width="260" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="viewDetail(row)">明细</el-button>
           <el-button v-if="canEdit('sales') && (row.status === '待发货' || row.status === '部分发货')" link type="success" @click="handleShip(row)">发货</el-button>
           <el-button v-if="canEdit('sales') && row.payment_status !== '已付款' && row.status !== '已取消'" link type="warning" @click="openPaymentDialog(row)">回款</el-button>
+          <el-button v-if="canEdit('sales') && (row.status === '部分发货' || row.status === '已发货' || row.status === '已签收')" link type="danger" @click="openReturnDialog(row)">退货</el-button>
           <el-button v-if="canEdit('sales') && row.status === '已发货'" link type="primary" @click="handleSign(row)">签收</el-button>
         </template>
       </el-table-column>
@@ -73,6 +74,7 @@
           <el-button size="small" @click="viewDetail(item)">明细</el-button>
           <el-button v-if="canEdit('sales') && (item.status === '待发货' || item.status === '部分发货')" size="small" type="success" @click="handleShip(item)">发货</el-button>
           <el-button v-if="canEdit('sales') && item.payment_status !== '已付款' && item.status !== '已取消'" size="small" type="warning" @click="openPaymentDialog(item)">回款</el-button>
+          <el-button v-if="canEdit('sales') && (item.status === '部分发货' || item.status === '已发货' || item.status === '已签收')" size="small" type="danger" plain @click="openReturnDialog(item)">退货</el-button>
           <el-button v-if="canEdit('sales') && item.status === '已发货'" size="small" type="primary" @click="handleSign(item)">签收</el-button>
         </div>
       </div>
@@ -142,6 +144,42 @@
       </template>
     </el-dialog>
 
+    <!-- Return Dialog -->
+    <el-dialog v-model="returnDialogVisible" title="登记退货" :width="isMobile ? '90%' : '460px'" destroy-on-close>
+      <el-form :model="returnForm" label-width="90px" size="large">
+        <el-form-item label="订单">
+          <span>{{ returnOrder?.order_no }}（{{ returnOrder?.customer_name }}）</span>
+        </el-form-item>
+        <el-form-item label="产品" required>
+          <el-select v-model="returnForm.product_id" placeholder="选择退货产品" style="width: 100%" @change="onReturnProductChange">
+            <el-option v-for="p in returnableItems" :key="p.product_id" :label="`${p.product_name}（已发${p.shipped_qty}，已退${p.returned_qty || 0}，可退${p.returnable_qty}）`" :value="p.product_id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="退货数量" required>
+          <el-input-number v-model="returnForm.quantity" :min="0.01" :precision="2" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="退货单价">
+          <el-input-number v-model="returnForm.unit_price" :min="0" :precision="2" style="width: 100%" placeholder="默认取订单单价" />
+        </el-form-item>
+        <el-form-item label="退货类型" required>
+          <el-radio-group v-model="returnForm.return_type">
+            <el-radio value="退回入库">退回入库（货还能卖）</el-radio>
+            <el-radio value="报废退回">报废退回（货不要了）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="退货日期" required>
+          <el-date-picker v-model="returnForm.date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="returnForm.notes" type="textarea" :rows="2" placeholder="退货原因等" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="returnDialogVisible = false" size="large">取消</el-button>
+        <el-button type="danger" @click="handleReturn" :loading="submitting" size="large">确认退货</el-button>
+      </template>
+    </el-dialog>
+
     <!-- Detail Dialog with shipment progress -->
     <el-dialog v-model="detailVisible" title="订单明细" :width="isMobile ? '90%' : '700px'" destroy-on-close>
       <el-descriptions :column="2" border size="large" v-if="detailOrder">
@@ -190,6 +228,28 @@
           </el-table-column>
         </el-table>
       </div>
+      <div v-if="detailReturns.length > 0" style="margin-top: 16px;">
+        <h4 style="margin: 0 0 8px; font-size: 14px; color: #666;">退货记录</h4>
+        <el-table :data="detailReturns" stripe size="small">
+          <el-table-column prop="date" label="日期" width="100" />
+          <el-table-column prop="product_name" label="产品" />
+          <el-table-column prop="quantity" label="数量" width="70" />
+          <el-table-column label="金额" width="90" align="right">
+            <template #default="{ row }">¥{{ (row.total_amount || 0).toFixed(2) }}</template>
+          </el-table-column>
+          <el-table-column prop="return_type" label="类型" width="90" />
+          <el-table-column label="状态" width="80">
+            <template #default="{ row }">
+              <el-tag :type="row.status === '有效' ? 'danger' : 'info'" size="small">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="currentRole === 'boss'" label="操作" width="70">
+            <template #default="{ row }">
+              <el-button v-if="row.status === '有效'" link type="danger" size="small" @click="handleVoidReturn(row)">作废</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
       <div style="text-align: center; margin-top: 16px;" v-if="detailOrder && canEdit('sales') && (detailOrder.status === '待发货' || detailOrder.status === '部分发货')">
         <el-button type="success" size="large" @click="goToShipment(detailOrder)">创建发货</el-button>
       </div>
@@ -203,6 +263,7 @@ import { useRouter } from 'vue-router'
 import {
   getSalesOrders, createSalesOrder, recordPayment,
   updateSalesOrderStatus, getOrderShipmentProgress, getCustomers, getProducts, canEdit, downloadExport,
+  createReturn, voidReturn, getOrderReturns,
 } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -227,7 +288,14 @@ const productList = ref([])
 const detailOrder = ref(null)
 const detailItems = ref([])
 const detailShipments = ref([])
+const detailReturns = ref([])
 const paymentOrder = ref(null)
+
+const currentRole = localStorage.getItem('currentRole') || ''
+const returnDialogVisible = ref(false)
+const returnOrder = ref(null)
+const returnableItems = ref([])
+const returnForm = ref({ product_id: null, quantity: 0, unit_price: null, return_type: '退回入库', date: new Date().toISOString().slice(0, 10), notes: '' })
 
 const defaultForm = { date: new Date().toISOString().slice(0, 10), customer_id: '', items: [], notes: '' }
 const form = ref({ ...defaultForm })
@@ -374,7 +442,95 @@ async function viewDetail(row) {
     detailItems.value = JSON.parse(row.items || '[]')
     detailShipments.value = []
   }
+  try {
+    detailReturns.value = await getOrderReturns(row.id)
+  } catch {
+    detailReturns.value = []
+  }
   detailVisible.value = true
+}
+
+async function openReturnDialog(row) {
+  returnOrder.value = row
+  try {
+    const [progressRes, returnsRes] = await Promise.all([getOrderShipmentProgress(row.id), getOrderReturns(row.id)])
+    const returnedMap = {}
+    for (const r of (returnsRes || [])) {
+      if (r.status === '有效') returnedMap[r.product_id] = (returnedMap[r.product_id] || 0) + r.quantity
+    }
+    returnableItems.value = (progressRes.progress || [])
+      .map(p => ({
+        ...p,
+        returned_qty: returnedMap[p.product_id] || 0,
+        returnable_qty: Math.max((p.shipped_qty || 0) - (returnedMap[p.product_id] || 0), 0),
+        unit_price: p.unit_price,
+      }))
+      .filter(p => p.returnable_qty > 0)
+  } catch {
+    returnableItems.value = []
+  }
+  if (returnableItems.value.length === 0) {
+    ElMessage.warning('该订单没有可退的产品（可退量=已发量-已退量）')
+    return
+  }
+  returnForm.value = { product_id: null, quantity: 0, unit_price: null, return_type: '退回入库', date: new Date().toISOString().slice(0, 10), notes: '' }
+  returnDialogVisible.value = true
+}
+
+function onReturnProductChange() {
+  const item = returnableItems.value.find(p => p.product_id === returnForm.value.product_id)
+  if (item) {
+    returnForm.value.unit_price = item.unit_price
+    returnForm.value.quantity = 1
+  }
+}
+
+async function handleReturn() {
+  if (!returnForm.value.product_id) {
+    ElMessage.warning('请选择退货产品')
+    return
+  }
+  if (!returnForm.value.quantity || returnForm.value.quantity <= 0) {
+    ElMessage.warning('请输入退货数量')
+    return
+  }
+  const item = returnableItems.value.find(p => p.product_id === returnForm.value.product_id)
+  if (item && returnForm.value.quantity > item.returnable_qty) {
+    ElMessage.warning(`退货数量超过可退量（可退: ${item.returnable_qty}）`)
+    return
+  }
+  submitting.value = true
+  try {
+    await createReturn({
+      date: returnForm.value.date,
+      customer_id: returnOrder.value.customer_id,
+      sales_order_id: returnOrder.value.id,
+      product_id: returnForm.value.product_id,
+      quantity: returnForm.value.quantity,
+      unit_price: returnForm.value.unit_price,
+      return_type: returnForm.value.return_type,
+      notes: returnForm.value.notes,
+    })
+    ElMessage.success('退货登记成功')
+    returnDialogVisible.value = false
+    loadData()
+  } catch (e) {} finally {
+    submitting.value = false
+  }
+}
+
+async function handleVoidReturn(row) {
+  try {
+    await ElMessageBox.confirm(`确认作废这笔退货（${row.product_name} ×${row.quantity}，¥${(row.total_amount || 0).toFixed(2)}）？订单金额将加回${row.return_type === '退回入库' ? '，产品库存将减回' : ''}。`, '作废退货', { type: 'warning' })
+    await voidReturn(row.id)
+    ElMessage.success('退货已作废')
+    if (detailVisible.value && detailOrder.value) {
+      viewDetail(orders.value.find(o => o.id === detailOrder.value.id) || detailOrder.value)
+    }
+    loadData()
+  } catch (e) {
+    if (e !== 'cancel') { /* interceptor */ }
+  }
 }
 
 onMounted(() => { loadData(); loadOptions() })
