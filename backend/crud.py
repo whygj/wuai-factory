@@ -8,7 +8,7 @@ from models import (
     User, RawMaterial, Product, InventoryTransaction, ProductTransaction,
     ProductionRecord, ShipmentRecord, OperationLog,
     Customer, Supplier, SalesOrder, PurchaseOrder,
-    LabRecord, MaterialBatch, BatchUsage, PurchasePayment, ReturnRecord,
+    LabRecord, MaterialBatch, BatchUsage, PurchasePayment, ReturnRecord, Bom,
 )
 from schemas import (
     MaterialCreate, MaterialUpdate, InboundRequest, StockAdjustRequest,
@@ -21,6 +21,7 @@ from schemas import (
     PurchaseOrderCreate, PurchaseStatusUpdate,
     LabRecordCreate, LabRecordUpdate,
     PurchasePaymentRequest, ReturnCreateRequest,
+    BomSaveRequest, BomPreviewRequest,
 )
 
 
@@ -407,7 +408,38 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
                 quantity=take,
             ))
 
-        log_operation(db, operator, "生产登记", "production_records", record.id, f"生产 {product.name} {data.quantity}{data.unit or product.unit}")
+        # v3.3 成本快照：登记时算好写死，报表永远读快照（批次价/配方后变，历史不漂移）。
+        # 口径=实际消耗法：Σ(batch_usages×批次进价) + 未分批部分×原料档案价；全算不出留 None。
+        # 注意取值来源：batch_usages 记录的是实际扣减量（手改/替代后的量），不是配方量。
+        cost = 0.0
+        has_any_price = False
+        batch_cost_by_material = {}
+        for batch, material_id, take in batch_usages:
+            price = batch.unit_price
+            if price is None:
+                mat = db.query(RawMaterial).filter(RawMaterial.id == material_id).first()
+                price = mat.purchase_price if mat else None
+            if price is not None:
+                cost += take * price
+                has_any_price = True
+                batch_cost_by_material[material_id] = batch_cost_by_material.get(material_id, 0) + take
+        # 未分批部分（总用量-批次覆盖量>0时回退档案价）
+        for usage in materials_used:
+            covered = batch_cost_by_material.get(usage.material_id, 0)
+            uncovered = round(usage.quantity - covered, 4)
+            if uncovered > 0.0001:
+                mat = db.query(RawMaterial).filter(RawMaterial.id == usage.material_id).first()
+                if mat and mat.purchase_price is not None:
+                    cost += uncovered * mat.purchase_price
+                    has_any_price = True
+
+        record.material_cost = round(cost, 2) if has_any_price else None
+        # bom_snapshot：提交时实际用量（含手改/替代），配方本身不快照
+        record.bom_snapshot = materials_json
+
+        log_operation(db, operator, "生产登记", "production_records", record.id,
+                      f"生产 {product.name} {data.quantity}{data.unit or product.unit}"
+                      + (f"，原料成本 {record.material_cost}" if record.material_cost is not None else ""))
         db.commit()
         db.refresh(record)
         return record
@@ -431,6 +463,8 @@ def get_production_records(db: Session, start_date: str = "", end_date: str = ""
             "product_name": r.product.name if r.product else "",
             "quantity": r.quantity, "unit": r.unit,
             "sugar_degree": r.sugar_degree, "raw_materials_used": r.raw_materials_used,
+            "material_cost": r.material_cost,
+            "unit_cost": round(r.material_cost / r.quantity, 4) if r.material_cost is not None and r.quantity else None,
             "operator": r.operator, "notes": r.notes, "created_at": r.created_at,
         }
         result.append(d)
@@ -446,6 +480,8 @@ def get_production_record(db: Session, record_id: int):
         "product_name": r.product.name if r.product else "",
         "quantity": r.quantity, "unit": r.unit,
         "sugar_degree": r.sugar_degree, "raw_materials_used": r.raw_materials_used,
+        "material_cost": r.material_cost,
+        "unit_cost": round(r.material_cost / r.quantity, 4) if r.material_cost is not None and r.quantity else None,
         "operator": r.operator, "notes": r.notes, "created_at": r.created_at,
     }
 
@@ -2209,3 +2245,180 @@ def get_order_returns(db: Session, order_id: int):
         "status": r.status, "operator": r.operator or "",
         "notes": r.notes or "", "created_at": r.created_at,
     } for r in returns]
+
+
+# ==================== BOM (v3.3) ====================
+
+def get_bom(db: Session, product_id: int):
+    """查看配方（全角色）"""
+    rows = db.query(Bom).filter(Bom.product_id == product_id).order_by(Bom.id).all()
+    if not rows:
+        return None
+    materials = {m.id: m for m in db.query(RawMaterial).filter(RawMaterial.id.in_([r.material_id for r in rows])).all()}
+    items = []
+    total_cost = 0.0
+    has_price = False
+    for r in rows:
+        mat = materials.get(r.material_id)
+        price = mat.purchase_price if mat else None
+        line_cost = r.material_quantity * price if price is not None else None
+        if line_cost is not None:
+            total_cost += line_cost
+            has_price = True
+        items.append({
+            "material_id": r.material_id,
+            "material_name": mat.name if mat else "",
+            "material_quantity": r.material_quantity,
+            "material_unit": r.material_unit or (mat.unit if mat else ""),
+            "purchase_price": price,
+            "line_cost": round(line_cost, 2) if line_cost is not None else None,
+        })
+    return {
+        "product_id": product_id,
+        "base_quantity": rows[0].base_quantity,
+        "base_unit": rows[0].base_unit,
+        "items": items,
+        "base_cost": round(total_cost, 2) if has_price else None,
+        "unit_cost": round(total_cost / rows[0].base_quantity, 4) if has_price and rows[0].base_quantity else None,
+    }
+
+
+def save_bom(db: Session, product_id: int, data: BomSaveRequest, operator: str = "") -> dict:
+    """整体替换保存（先删后插，事务内）——一个产品一份配方，无版本，历史靠 bom_snapshot"""
+    try:
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            raise ValueError("产品不存在")
+        for item in data.items:
+            mat = db.query(RawMaterial).filter(RawMaterial.id == item.material_id).first()
+            if not mat:
+                raise ValueError(f"原料ID {item.material_id} 不存在")
+        db.query(Bom).filter(Bom.product_id == product_id).delete()
+        for item in data.items:
+            mat = db.query(RawMaterial).filter(RawMaterial.id == item.material_id).first()
+            db.add(Bom(
+                product_id=product_id,
+                base_quantity=data.base_quantity,
+                base_unit=data.base_unit,
+                material_id=item.material_id,
+                material_quantity=item.material_quantity,
+                material_unit=item.material_unit or mat.unit or "",
+            ))
+        log_operation(db, operator, "保存配方", "boms", product_id,
+                      f"{product.name} 每{data.base_quantity}{data.base_unit}：{len(data.items)}种原料")
+        db.commit()
+        return get_bom(db, product_id)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def preview_bom(db: Session, data: BomPreviewRequest):
+    """纯计算无副作用：按基准批量等比换算产量用料 + 库存够否预检（事前预检，后端提交时照旧校验双保险）"""
+    rows = db.query(Bom).filter(Bom.product_id == data.product_id).order_by(Bom.id).all()
+    if not rows:
+        return {"has_bom": False, "items": []}
+    base_qty = rows[0].base_quantity
+    ratio = data.quantity / base_qty
+    materials = {m.id: m for m in db.query(RawMaterial).filter(RawMaterial.id.in_([r.material_id for r in rows])).all()}
+    items = []
+    for r in rows:
+        mat = materials.get(r.material_id)
+        need = round(r.material_quantity * ratio, 4)
+        stock = mat.current_stock if mat else 0
+        items.append({
+            "material_id": r.material_id,
+            "material_name": mat.name if mat else "",
+            "needed_quantity": need,
+            "material_unit": r.material_unit or (mat.unit if mat else ""),
+            "current_stock": stock,
+            "sufficient": stock >= need,
+        })
+    return {
+        "has_bom": True,
+        "base_quantity": base_qty,
+        "base_unit": rows[0].base_unit,
+        "quantity": data.quantity,
+        "ratio": round(ratio, 4),
+        "items": items,
+    }
+
+
+# ==================== Cost Reports (v3.3) ====================
+
+def get_cost_report(db: Session, year: int = None, month: int = None):
+    """生产成本页：当月生产次数/总产量/原料消耗总额（Σ快照）+ 明细 + 产品维度汇总"""
+    today = date.today()
+    y = year or today.year
+    m = month or today.month
+    month_start = date(y, m, 1)
+    month_end = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
+
+    records = db.query(ProductionRecord).filter(
+        ProductionRecord.date >= month_start,
+        ProductionRecord.date < month_end,
+    ).order_by(ProductionRecord.date.desc(), ProductionRecord.id.desc()).all()
+
+    total_cost = sum(r.material_cost or 0 for r in records)
+    total_quantity = sum(r.quantity or 0 for r in records)
+    uncosted = sum(1 for r in records if r.material_cost is None)
+
+    details = [{
+        "id": r.id, "date": str(r.date), "product_id": r.product_id,
+        "product_name": r.product.name if r.product else "",
+        "quantity": r.quantity, "unit": r.unit or "",
+        "material_cost": r.material_cost,
+        "unit_cost": round(r.material_cost / r.quantity, 4) if r.material_cost is not None and r.quantity else None,
+        "operator": r.operator or "",
+    } for r in records]
+
+    by_product = {}
+    for r in records:
+        key = r.product.name if r.product else f"产品#{r.product_id}"
+        agg = by_product.setdefault(key, {"product_name": key, "quantity": 0, "cost": 0, "count": 0})
+        agg["quantity"] += r.quantity or 0
+        agg["cost"] += r.material_cost or 0
+        agg["count"] += 1
+    by_product_list = sorted(by_product.values(), key=lambda x: x["cost"], reverse=True)
+
+    return {
+        "year": y, "month": m,
+        "total_count": len(records),
+        "total_quantity": round(total_quantity, 2),
+        "total_cost": round(total_cost, 2),
+        "uncosted_count": uncosted,
+        "details": details,
+        "by_product": by_product_list,
+    }
+
+
+def get_gross_margin(db: Session, year: int = None, month: int = None):
+    """月度粗毛利：当月订单收入 − 当月生产原料消耗（快照Σ）。
+    口径注：不含人工/水电/房租/包装；生产与销售存在时间错位（3月生产4月卖）。"""
+    today = date.today()
+    y = year or today.year
+    m = month or today.month
+    month_start = date(y, m, 1)
+    month_end = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
+
+    revenue = db.query(func.coalesce(func.sum(SalesOrder.total_amount), 0)).filter(
+        SalesOrder.date >= month_start,
+        SalesOrder.date < month_end,
+        SalesOrder.status != "已取消",
+    ).scalar()
+
+    cost = db.query(func.coalesce(func.sum(ProductionRecord.material_cost), 0)).filter(
+        ProductionRecord.date >= month_start,
+        ProductionRecord.date < month_end,
+    ).scalar()
+
+    margin = (revenue or 0) - (cost or 0)
+    margin_pct = round(margin / revenue * 100, 1) if revenue else None
+
+    return {
+        "year": y, "month": m,
+        "revenue": round(revenue or 0, 2),
+        "material_cost": round(cost or 0, 2),
+        "gross_margin": round(margin, 2),
+        "margin_pct": margin_pct,
+    }

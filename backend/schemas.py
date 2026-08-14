@@ -428,6 +428,35 @@ class PurchaseStatusUpdate(BaseModel):
     status: str
 
 
+# BOM 配方（v3.3）
+class BomItem(BaseModel):
+    material_id: int
+    material_quantity: float = Field(gt=0, description="基准批量下用量必须大于0")
+    material_unit: Optional[str] = None
+
+
+class BomSaveRequest(BaseModel):
+    base_quantity: float = Field(gt=0, description="基准批量必须大于0")
+    base_unit: str
+    items: List[BomItem]
+
+    @field_validator("items")
+    @classmethod
+    def validate_items(cls, v):
+        if not v:
+            raise ValueError("配方至少需要一行原料")
+        ids = [i.material_id for i in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("配方内原料不能重复")
+        return v
+
+
+class BomPreviewRequest(BaseModel):
+    product_id: int
+    quantity: float = Field(gt=0, description="产量必须大于0")
+    unit: Optional[str] = None
+
+
 # 供应商付款（v3.2）
 class PurchasePaymentRequest(BaseModel):
     amount: float = Field(gt=0, description="付款金额必须大于0")

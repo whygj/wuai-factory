@@ -1149,6 +1149,67 @@ def production_trace_backward(
     return result
 
 
+# ==================== BOM (v3.3) ====================
+
+@app.get("/api/products/{product_id}/bom")
+def get_product_bom(
+    product_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    result = crud.get_bom(db, product_id)
+    return result or {"has_bom": False, "items": []}
+
+
+@app.put("/api/products/{product_id}/bom")
+def save_product_bom(
+    product_id: int,
+    data: schemas.BomSaveRequest,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    # 配方维护=boss+leader（班长最懂配方）；clerk能看不能改
+    if current_role not in ("boss", "leader"):
+        raise HTTPException(status_code=403, detail="无权限维护配方")
+    try:
+        return crud.save_bom(db, product_id, data, current_user.display_name or current_user.phone)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/production/preview-bom")
+def preview_bom(
+    data: schemas.BomPreviewRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # 纯计算无副作用，前端预填用
+    return crud.preview_bom(db, data)
+
+
+# ==================== Cost Reports (v3.3) ====================
+
+@app.get("/api/reports/cost")
+def cost_report(
+    year: int = Query(0),
+    month: int = Query(0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_cost_report(db, year=year or None, month=month or None)
+
+
+@app.get("/api/reports/gross-margin")
+def gross_margin_report(
+    year: int = Query(0),
+    month: int = Query(0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_gross_margin(db, year=year or None, month=month or None)
+
+
 # ==================== Export (Excel) ====================
 
 from urllib.parse import quote

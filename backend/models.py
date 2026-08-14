@@ -95,11 +95,32 @@ class ProductionRecord(Base):
     unit = Column(Text)
     sugar_degree = Column(REAL)
     raw_materials_used = Column(Text)
+    # v3.3 成本快照：登记时算好写死，报表读快照不回算（批次价/配方后变历史不漂移）
+    material_cost = Column(REAL)  # 该次生产原料成本（实际消耗法；None=登记时算不出）
+    bom_snapshot = Column(Text)   # 本次生产提交的用量快照JSON（含手改/替代）
     operator = Column(Text)
     notes = Column(Text)
     created_at = Column(DateTime, default=now_cn)
 
     product = relationship("Product")
+
+
+class Bom(Base):
+    """产品配方（v3.3）：基准批量语义——每 base_quantity base_unit 用 material_quantity material_unit。
+    一个产品一份配方，一料一行；改配方=整体替换（先删后插），历史靠 production_records.bom_snapshot 留底。"""
+    __tablename__ = "boms"
+    __table_args__ = (UniqueConstraint("product_id", "material_id", name="uq_bom_product_material"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    base_quantity = Column(REAL, nullable=False)
+    base_unit = Column(Text, nullable=False)
+    material_id = Column(Integer, ForeignKey("raw_materials.id"), nullable=False)
+    material_quantity = Column(REAL, nullable=False)
+    material_unit = Column(Text, nullable=False)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=now_cn)
+    updated_at = Column(DateTime, default=now_cn, onupdate=now_cn)
 
 
 class ShipmentRecord(Base):
