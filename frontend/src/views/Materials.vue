@@ -25,9 +25,10 @@
           <template #default="{ row }">{{ row.safety_stock }} {{ row.unit }}</template>
         </el-table-column>
         <el-table-column prop="supplier" label="供应商" width="120" />
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="openInbound(row)">入库</el-button>
+            <el-button v-if="currentRole === 'boss'" size="small" @click="openAdjust(row)">盘点</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -47,6 +48,7 @@
           </div>
           <div class="card-actions">
             <el-button size="small" type="primary" @click="openInbound(item)">入库</el-button>
+            <el-button v-if="currentRole === 'boss'" size="small" @click="openAdjust(item)">盘点</el-button>
           </div>
         </div>
       </div>
@@ -96,16 +98,42 @@
         <el-button type="primary" @click="handleInbound">确认入库</el-button>
       </template>
     </el-dialog>
+
+    <!-- Stocktake Adjust Dialog (boss only) -->
+    <el-dialog v-model="adjustDialogVisible" :title="`盘点 - ${currentMaterial?.name || ''}`" :width="isMobile ? '90%' : '480px'" destroy-on-close>
+      <el-form :model="adjustForm" label-width="80px">
+        <el-form-item label="账面库存">
+          <div class="book-stock">{{ currentMaterial?.current_stock }} {{ currentMaterial?.unit }}</div>
+        </el-form-item>
+        <el-form-item label="实际数量" required>
+          <el-input-number v-model="adjustForm.actual_stock" :min="0" :precision="2" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="盘点原因" required>
+          <el-input v-model="adjustForm.reason" type="textarea" :rows="2" placeholder="如：6月大盘点，面粉受潮损耗" />
+        </el-form-item>
+      </el-form>
+      <div class="adjust-diff" v-if="adjustDiff !== null && adjustDiff !== 0"
+           :class="{ 'diff-up': adjustDiff > 0, 'diff-down': adjustDiff < 0 }">
+        {{ adjustDiff > 0 ? `盘盈 +${adjustDiff}` : `盘亏 ${adjustDiff}` }} {{ currentMaterial?.unit }}
+      </div>
+      <div class="adjust-diff diff-zero" v-else-if="adjustDiff === 0">账实一致，无需调整</div>
+      <template #footer>
+        <el-button @click="adjustDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleAdjust" :loading="adjusting" :disabled="adjustDiff === null || adjustDiff === 0">确认调整</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { getMaterials, createMaterial, inboundMaterial, downloadExport } from '../api'
+import { ref, computed, onMounted } from 'vue'
+import { getMaterials, createMaterial, inboundMaterial, adjustMaterial, downloadExport } from '../api'
 import { ElMessage } from 'element-plus'
 
 const isMobile = ref(window.innerWidth <= 768)
 window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
+
+const currentRole = localStorage.getItem('currentRole') || ''
 
 const search = ref('')
 const materials = ref([])
@@ -113,6 +141,14 @@ const addDialogVisible = ref(false)
 const inboundDialogVisible = ref(false)
 const currentMaterial = ref(null)
 const exporting = ref(false)
+const adjustDialogVisible = ref(false)
+const adjusting = ref(false)
+const adjustForm = ref({ actual_stock: null, reason: '' })
+
+const adjustDiff = computed(() => {
+  if (adjustForm.value.actual_stock === null || adjustForm.value.actual_stock === undefined || !currentMaterial.value) return null
+  return Math.round(((adjustForm.value.actual_stock - currentMaterial.value.current_stock) + Number.EPSILON) * 100) / 100
+})
 
 const categories = ['巧克力类', '油脂类', '果酱类', '乳制品', '粉类', '糖浆类', '添加剂']
 const units = ['kg', '桶', '件', '袋', '瓶']
@@ -177,6 +213,35 @@ async function handleInbound() {
   } catch (e) {}
 }
 
+function openAdjust(row) {
+  currentMaterial.value = row
+  adjustForm.value = { actual_stock: row.current_stock, reason: '' }
+  adjustDialogVisible.value = true
+}
+
+async function handleAdjust() {
+  if (adjustForm.value.actual_stock === null || adjustForm.value.actual_stock < 0) {
+    ElMessage.warning('请输入实际清点数量')
+    return
+  }
+  if (!adjustForm.value.reason || adjustForm.value.reason.trim().length < 2) {
+    ElMessage.warning('请填写盘点原因（至少2个字）')
+    return
+  }
+  adjusting.value = true
+  try {
+    const res = await adjustMaterial(currentMaterial.value.id, {
+      actual_stock: adjustForm.value.actual_stock,
+      reason: adjustForm.value.reason.trim(),
+    })
+    ElMessage.success(`已调整：账面 ${res.old_stock} → 实际 ${res.new_stock}（${res.diff > 0 ? '+' : ''}${res.diff}）`)
+    adjustDialogVisible.value = false
+    loadMaterials()
+  } catch (e) {} finally {
+    adjusting.value = false
+  }
+}
+
 onMounted(loadMaterials)
 </script>
 
@@ -205,6 +270,37 @@ onMounted(loadMaterials)
 .low-stock {
   color: var(--danger);
   font-weight: 700;
+}
+
+.book-stock {
+  background: #f5f5f5;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #666;
+  width: 100%;
+}
+
+.adjust-diff {
+  margin: 8px 0 0 80px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.adjust-diff.diff-up {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+.adjust-diff.diff-down {
+  background: #FFEBEE;
+  color: #C62828;
+}
+.adjust-diff.diff-zero {
+  background: #f5f5f5;
+  color: #999;
+  font-weight: 400;
 }
 
 .visible-mobile { display: none; }

@@ -135,6 +135,12 @@ class InboundRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class StockAdjustRequest(BaseModel):
+    """库存盘点调整：actual_stock为实盘数，reason必填留痕"""
+    actual_stock: float = Field(ge=0, description="实际清点数量，不能为负")
+    reason: str = Field(min_length=2, description="盘点原因必填（差异留痕）")
+
+
 class TransactionResponse(BaseModel):
     id: int
     transaction_type: str

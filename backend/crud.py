@@ -5,13 +5,13 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models import (
-    User, RawMaterial, Product, InventoryTransaction,
+    User, RawMaterial, Product, InventoryTransaction, ProductTransaction,
     ProductionRecord, ShipmentRecord, OperationLog,
     Customer, Supplier, SalesOrder, PurchaseOrder,
     LabRecord,
 )
 from schemas import (
-    MaterialCreate, MaterialUpdate, InboundRequest,
+    MaterialCreate, MaterialUpdate, InboundRequest, StockAdjustRequest,
     ProductCreate, ProductUpdate,
     ProductionCreate, MaterialUsage,
     ShipmentCreate, ShipmentStatusUpdate,
@@ -206,6 +206,72 @@ def get_transactions(db: Session, material_id: int = 0, page: int = 1, page_size
         }
         result.append(d)
     return {"total": total, "items": result}
+
+
+def adjust_material_stock(db: Session, material_id: int, data: StockAdjustRequest, operator: str) -> dict:
+    """原料盘点调整（boss专属入口）：单事务改库存+写流水+操作日志，差异必须留痕"""
+    try:
+        material = db.query(RawMaterial).filter(RawMaterial.id == material_id).with_for_update().first()
+        if not material:
+            raise ValueError("原料不存在")
+        old_stock = material.current_stock or 0
+        diff = round(data.actual_stock - old_stock, 2)
+        if diff == 0:
+            raise ValueError("账实一致，无需调整")
+        material.current_stock = data.actual_stock
+        material.updated_at = now_cn()
+
+        transaction = InventoryTransaction(
+            transaction_type="盘点调整",
+            raw_material_id=material_id,
+            quantity=diff,
+            unit=material.unit,
+            source="adjust",
+            related_id=0,
+            operator=operator,
+            notes=data.reason,
+        )
+        db.add(transaction)
+        log_operation(db, operator, "盘点调整", "raw_materials", material_id,
+                      f"{material.name} 账面{old_stock}→实际{data.actual_stock}，差异{diff:+g}：{data.reason}")
+        db.commit()
+        return {"old_stock": old_stock, "new_stock": data.actual_stock, "diff": diff}
+    except Exception:
+        db.rollback()
+        raise
+
+
+def adjust_product_stock(db: Session, product_id: int, data: StockAdjustRequest, operator: str) -> dict:
+    """产品盘点调整（boss专属入口）：同原料，流水走 product_transactions"""
+    try:
+        product = db.query(Product).filter(Product.id == product_id).with_for_update().first()
+        if not product:
+            raise ValueError("产品不存在")
+        old_stock = product.current_stock or 0
+        diff = round(data.actual_stock - old_stock, 2)
+        if diff == 0:
+            raise ValueError("账实一致，无需调整")
+        product.current_stock = data.actual_stock
+        product.updated_at = now_cn()
+
+        transaction = ProductTransaction(
+            transaction_type="盘点调整",
+            product_id=product_id,
+            quantity=diff,
+            unit=product.unit,
+            source="adjust",
+            related_id=0,
+            operator=operator,
+            notes=data.reason,
+        )
+        db.add(transaction)
+        log_operation(db, operator, "盘点调整", "products", product_id,
+                      f"{product.name} 账面{old_stock}→实际{data.actual_stock}，差异{diff:+g}：{data.reason}")
+        db.commit()
+        return {"old_stock": old_stock, "new_stock": data.actual_stock, "diff": diff}
+    except Exception:
+        db.rollback()
+        raise
 
 
 # ==================== Products ====================

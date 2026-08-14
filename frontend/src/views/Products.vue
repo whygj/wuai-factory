@@ -20,9 +20,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="unit" label="单位" width="70" />
-        <el-table-column v-if="canEdit('product')" label="操作" width="100" fixed="right">
+        <el-table-column v-if="canEdit('product') || currentRole === 'boss'" label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-button v-if="canEdit('product')" link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-button v-if="currentRole === 'boss'" link type="warning" @click="openAdjust(row)">盘点</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -37,8 +38,9 @@
             <span>库存: <span :class="{ 'low-stock': item.current_stock <= 10 }">{{ item.current_stock }}</span> {{ item.unit }}</span>
             <span v-if="item.spec">规格: {{ item.spec }}</span>
           </div>
-          <div class="card-actions" v-if="canEdit('product')">
-            <el-button size="small" @click="openDialog(item)">编辑</el-button>
+          <div class="card-actions" v-if="canEdit('product') || currentRole === 'boss'">
+            <el-button v-if="canEdit('product')" size="small" @click="openDialog(item)">编辑</el-button>
+            <el-button v-if="currentRole === 'boss'" size="small" type="warning" plain @click="openAdjust(item)">盘点</el-button>
           </div>
         </div>
       </div>
@@ -72,16 +74,42 @@
         <el-button type="primary" @click="handleSubmit" :loading="submitting" size="large">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- Stocktake Adjust Dialog (boss only) -->
+    <el-dialog v-model="adjustDialogVisible" :title="`盘点 - ${adjustTarget?.name || ''}`" :width="isMobile ? '90%' : '480px'" destroy-on-close>
+      <el-form :model="adjustForm" label-width="80px" size="large">
+        <el-form-item label="账面库存">
+          <div class="book-stock">{{ adjustTarget?.current_stock }} {{ adjustTarget?.unit }}</div>
+        </el-form-item>
+        <el-form-item label="实际数量" required>
+          <el-input-number v-model="adjustForm.actual_stock" :min="0" :precision="2" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="盘点原因" required>
+          <el-input v-model="adjustForm.reason" type="textarea" :rows="2" placeholder="如：搬运破损2盒" />
+        </el-form-item>
+      </el-form>
+      <div class="adjust-diff" v-if="adjustDiff !== null && adjustDiff !== 0"
+           :class="{ 'diff-up': adjustDiff > 0, 'diff-down': adjustDiff < 0 }">
+        {{ adjustDiff > 0 ? `盘盈 +${adjustDiff}` : `盘亏 ${adjustDiff}` }} {{ adjustTarget?.unit }}
+      </div>
+      <div class="adjust-diff diff-zero" v-else-if="adjustDiff === 0">账实一致，无需调整</div>
+      <template #footer>
+        <el-button @click="adjustDialogVisible = false" size="large">取消</el-button>
+        <el-button type="primary" @click="handleAdjust" :loading="adjusting" size="large" :disabled="adjustDiff === null || adjustDiff === 0">确认调整</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { getProducts, createProduct, updateProduct, canEdit } from '../api'
+import { ref, computed, onMounted } from 'vue'
+import { getProducts, createProduct, updateProduct, adjustProduct, canEdit } from '../api'
 import { ElMessage } from 'element-plus'
 
 const isMobile = ref(window.innerWidth <= 768)
 window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
+
+const currentRole = localStorage.getItem('currentRole') || ''
 
 const products = ref([])
 const search = ref('')
@@ -90,6 +118,16 @@ const editing = ref(null)
 const submitting = ref(false)
 const categories = ['慕斯', '果酱', '巧克力', '其他']
 const units = ['盒', '瓶', '箱', '个']
+
+const adjustDialogVisible = ref(false)
+const adjusting = ref(false)
+const adjustTarget = ref(null)
+const adjustForm = ref({ actual_stock: null, reason: '' })
+
+const adjustDiff = computed(() => {
+  if (adjustForm.value.actual_stock === null || adjustForm.value.actual_stock === undefined || !adjustTarget.value) return null
+  return Math.round(((adjustForm.value.actual_stock - adjustTarget.value.current_stock) + Number.EPSILON) * 100) / 100
+})
 
 const form = ref({ name: '', category: '', unit: '盒', spec: '', notes: '' })
 
@@ -129,6 +167,35 @@ async function handleSubmit() {
   }
 }
 
+function openAdjust(row) {
+  adjustTarget.value = row
+  adjustForm.value = { actual_stock: row.current_stock, reason: '' }
+  adjustDialogVisible.value = true
+}
+
+async function handleAdjust() {
+  if (adjustForm.value.actual_stock === null || adjustForm.value.actual_stock < 0) {
+    ElMessage.warning('请输入实际清点数量')
+    return
+  }
+  if (!adjustForm.value.reason || adjustForm.value.reason.trim().length < 2) {
+    ElMessage.warning('请填写盘点原因（至少2个字）')
+    return
+  }
+  adjusting.value = true
+  try {
+    const res = await adjustProduct(adjustTarget.value.id, {
+      actual_stock: adjustForm.value.actual_stock,
+      reason: adjustForm.value.reason.trim(),
+    })
+    ElMessage.success(`已调整：账面 ${res.old_stock} → 实际 ${res.new_stock}（${res.diff > 0 ? '+' : ''}${res.diff}）`)
+    adjustDialogVisible.value = false
+    load()
+  } catch (e) {} finally {
+    adjusting.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -136,6 +203,25 @@ onMounted(load)
 .page-title { font-size: 24px; font-weight: 700; color: var(--primary); margin-bottom: 16px; }
 .toolbar { margin-bottom: 16px; }
 .low-stock { color: #F44336; font-weight: 700; }
+.book-stock {
+  background: #f5f5f5;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #666;
+  width: 100%;
+}
+.adjust-diff {
+  margin: 8px 0 0 80px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.adjust-diff.diff-up { background: #E8F5E9; color: #2E7D32; }
+.adjust-diff.diff-down { background: #FFEBEE; color: #C62828; }
+.adjust-diff.diff-zero { background: #f5f5f5; color: #999; font-weight: 400; }
 .visible-mobile { display: none; }
 .hidden-mobile { display: block; }
 .card-list { display: flex; flex-direction: column; gap: 8px; }

@@ -63,6 +63,26 @@ class InventoryTransaction(Base):
     material = relationship("RawMaterial")
 
 
+class ProductTransaction(Base):
+    """产品库存流水（v3.0.7 新增）：盘点调整等直接作用于产品库存的变动留痕。
+    注意：inventory_transactions.raw_material_id 是非空外键，产品侧变动无法复用——
+    生产入库/发货扣减产品库存属于业务单据自身的留痕，不在此表。"""
+    __tablename__ = "product_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    transaction_type = Column(Text, nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    quantity = Column(REAL, nullable=False)
+    unit = Column(Text)
+    source = Column(Text)
+    related_id = Column(Integer, default=0)
+    operator = Column(Text)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=now_cn)
+
+    product = relationship("Product")
+
+
 class ProductionRecord(Base):
     __tablename__ = "production_records"
 

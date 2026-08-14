@@ -374,6 +374,39 @@ def list_transactions(
     return crud.get_transactions(db, material_id=material_id, page=page, page_size=page_size)
 
 
+@app.post("/api/materials/{material_id}/adjust")
+def adjust_material(
+    material_id: int,
+    data: schemas.StockAdjustRequest,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    # 盘点是改账动作，必须过老板的手（与回款登记同款防御）
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="仅老板可盘点调整")
+    try:
+        return crud.adjust_material_stock(db, material_id, data, current_user.display_name or current_user.phone)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/products/{product_id}/adjust")
+def adjust_product(
+    product_id: int,
+    data: schemas.StockAdjustRequest,
+    current_user: User = Depends(get_current_user),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    if current_role != "boss":
+        raise HTTPException(status_code=403, detail="仅老板可盘点调整")
+    try:
+        return crud.adjust_product_stock(db, product_id, data, current_user.display_name or current_user.phone)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # ==================== Products ====================
 
 @app.get("/api/products")

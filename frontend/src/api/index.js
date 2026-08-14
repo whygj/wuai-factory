@@ -67,12 +67,14 @@ export const getMaterials = (params) => api.get('/materials', { params })
 export const createMaterial = (data) => api.post('/materials', data)
 export const updateMaterial = (id, data) => api.put(`/materials/${id}`, data)
 export const inboundMaterial = (id, data) => api.post(`/materials/${id}/inbound`, data)
+export const adjustMaterial = (id, data) => api.post(`/materials/${id}/adjust`, data)
 export const getTransactions = (params) => api.get('/materials/transactions', { params })
 
 // Products
 export const getProducts = (params) => api.get('/products', { params })
 export const createProduct = (data) => api.post('/products', data)
 export const updateProduct = (id, data) => api.put(`/products/${id}`, data)
+export const adjustProduct = (id, data) => api.post(`/products/${id}/adjust`, data)
 
 // Production
 export const getProduction = (params) => api.get('/production', { params })
