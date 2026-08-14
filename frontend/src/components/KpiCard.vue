@@ -2,7 +2,9 @@
   <div class="kpi-card" :style="{ borderTop: `4px solid ${color}` }" @click="$emit('click')">
     <div class="kpi-header">
       <span class="kpi-label">{{ label }}</span>
-      <el-icon class="kpi-icon" :style="{ color }"><component :is="icon" /></el-icon>
+      <!-- 对象=图标组件正常渲染；字符串(emoji)=文本渲染，修复Chrome128老内核createElement('💰')抛InvalidCharacterError导致整页空白 -->
+      <el-icon v-if="typeof icon === 'object'" class="kpi-icon" :style="{ color }"><component :is="icon" /></el-icon>
+      <span v-else class="kpi-icon kpi-emoji" :style="{ color }">{{ icon }}</span>
     </div>
     <div class="kpi-value" :style="{ color }">{{ value }}</div>
     <slot />
@@ -60,6 +62,10 @@ defineEmits(['click'])
 .kpi-icon {
   font-size: 24px;
   opacity: 0.7;
+}
+
+.kpi-emoji {
+  line-height: 1;
 }
 
 .kpi-value {
