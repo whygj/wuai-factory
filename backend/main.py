@@ -44,10 +44,7 @@ def send_code(req: schemas.SendCodeRequest):
 
 @app.post("/api/auth/login", response_model=schemas.TokenResponse)
 def login(req: schemas.LoginRequest, response: Response, db: Session = Depends(get_db)):
-    v = sms.verify_code(req.phone, req.code)
-    if not v["ok"]:
-        raise HTTPException(status_code=401, detail=v["msg"])
-
+    # 先查用户状态（不消费验证码），未注册用户走注册流程时验证码仍有效
     user = db.query(User).filter(User.phone == req.phone).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户未注册")
@@ -56,6 +53,10 @@ def login(req: schemas.LoginRequest, response: Response, db: Session = Depends(g
         raise HTTPException(status_code=403, detail="账号待审核，请等待管理员通过")
     if user.status == "rejected":
         raise HTTPException(status_code=403, detail="账号未通过审核，请联系管理员")
+
+    v = sms.verify_code(req.phone, req.code)
+    if not v["ok"]:
+        raise HTTPException(status_code=401, detail=v["msg"])
 
     roles = json.loads(user.roles)
     current_role = roles[0] if roles else "clerk"
