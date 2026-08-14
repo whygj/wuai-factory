@@ -31,8 +31,8 @@
         <el-table-column prop="phone" label="手机号" width="140" />
         <el-table-column label="角色" width="100">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.roles[0] === 'boss' ? 'danger' : row.roles[0] === 'clerk' ? 'warning' : 'info'">
-              {{ roleLabels[row.roles[0]] || row.roles[0] }}
+            <el-tag v-for="r in row.roles" :key="r" size="small" style="margin-right:4px;" :type="r === 'boss' ? 'danger' : r === 'clerk' ? 'warning' : 'info'">
+              {{ roleLabels[r] || r }}
             </el-tag>
           </template>
         </el-table-column>
@@ -44,6 +44,13 @@
         <el-table-column label="注册时间">
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="150" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="row.status === 'approved'" link type="danger" @click="toggleStatus(row, 'disabled')">停用</el-button>
+            <el-button v-else-if="row.status === 'disabled'" link type="success" @click="toggleStatus(row, 'approved')">启用</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -61,21 +68,108 @@
             </el-tag>
           </div>
           <div class="card-info card-sub">{{ formatTime(item.created_at) }}</div>
+          <div class="card-actions">
+            <el-button size="small" @click="openEdit(item)">编辑</el-button>
+            <el-button v-if="item.status === 'approved'" size="small" type="danger" plain @click="toggleStatus(item, 'disabled')">停用</el-button>
+            <el-button v-else-if="item.status === 'disabled'" size="small" type="success" plain @click="toggleStatus(item, 'approved')">启用</el-button>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- Edit Dialog -->
+    <el-dialog v-model="editDialogVisible" title="编辑用户" :width="isMobile ? '90%' : '440px'" destroy-on-close>
+      <el-form :model="editForm" label-width="80px" size="large">
+        <el-form-item label="手机号">
+          <span>{{ editForm.phone }}</span>
+        </el-form-item>
+        <el-form-item label="姓名">
+          <el-input v-model="editForm.display_name" placeholder="姓名" />
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-checkbox-group v-model="editForm.roles">
+            <el-checkbox value="boss">老板</el-checkbox>
+            <el-checkbox value="clerk">内勤</el-checkbox>
+            <el-checkbox value="leader">班长</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-radio-group v-model="editForm.status">
+            <el-radio value="approved">正常</el-radio>
+            <el-radio value="disabled">停用</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialogVisible = false" size="large">取消</el-button>
+        <el-button type="primary" @click="handleSaveEdit" :loading="submitting" size="large">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getPendingUsersApi, getAllUsersApi, approveUserApi, rejectUserApi } from '../api'
+import { getPendingUsersApi, getAllUsersApi, approveUserApi, rejectUserApi, updateUserApi } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const loading = ref(true)
 const pendingUsers = ref([])
 const allUsers = ref([])
 const roleLabels = { boss: '老板', clerk: '内勤', leader: '班长' }
+const isMobile = ref(window.innerWidth <= 768)
+window.addEventListener('resize', () => { isMobile.value = window.innerWidth <= 768 })
+
+const editDialogVisible = ref(false)
+const submitting = ref(false)
+const editForm = ref({ id: null, phone: '', display_name: '', roles: [], status: 'approved' })
+
+function openEdit(row) {
+  editForm.value = {
+    id: row.id,
+    phone: row.phone,
+    display_name: row.display_name || '',
+    roles: [...(row.roles || [])],
+    status: row.status === 'disabled' ? 'disabled' : 'approved',
+  }
+  editDialogVisible.value = true
+}
+
+async function handleSaveEdit() {
+  if (!editForm.value.display_name) {
+    ElMessage.warning('请输入姓名')
+    return
+  }
+  if (editForm.value.roles.length === 0) {
+    ElMessage.warning('请至少选择一个角色')
+    return
+  }
+  submitting.value = true
+  try {
+    await updateUserApi(editForm.value.id, {
+      display_name: editForm.value.display_name,
+      roles: editForm.value.roles,
+      status: editForm.value.status,
+    })
+    ElMessage.success('保存成功')
+    editDialogVisible.value = false
+    loadData()
+  } catch (e) {} finally {
+    submitting.value = false
+  }
+}
+
+async function toggleStatus(row, status) {
+  const action = status === 'disabled' ? '停用' : '启用'
+  try {
+    await ElMessageBox.confirm(`确认${action}账号 ${row.display_name || row.phone}？${status === 'disabled' ? '停用后该用户立即无法访问系统。' : ''}`, `${action}确认`, { type: status === 'disabled' ? 'warning' : 'success' })
+    await updateUserApi(row.id, { status })
+    ElMessage.success(`已${action}`)
+    loadData()
+  } catch (e) {
+    if (e !== 'cancel') { /* handled by interceptor */ }
+  }
+}
 
 async function loadData() {
   loading.value = true
@@ -120,11 +214,11 @@ async function handleReject(userId) {
 }
 
 function statusType(s) {
-  return s === 'approved' ? 'success' : s === 'rejected' ? 'danger' : 'warning'
+  return s === 'approved' ? 'success' : s === 'rejected' || s === 'disabled' ? 'danger' : 'warning'
 }
 
 function statusText(s) {
-  return s === 'approved' ? '已通过' : s === 'rejected' ? '已拒绝' : '待审核'
+  return s === 'approved' ? '已通过' : s === 'rejected' ? '已拒绝' : s === 'disabled' ? '已停用' : '待审核'
 }
 
 function formatTime(t) {
