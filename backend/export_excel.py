@@ -144,3 +144,54 @@ def export_production(db: Session, start_date: str = "", end_date: str = "") -> 
                      used_text, r.operator or "", r.notes or ""])
     _new_sheet(wb, "生产记录", ["日期", "产品", "产量", "单位", "糖度", "消耗原料", "操作人", "备注"], rows)
     return _to_xlsx_bytes(wb)
+
+
+def export_usage_logs(db: Session, start_date: str = "", end_date: str = "",
+                      material_id: int = 0, category: str = "", source: str = "") -> bytes:
+    from models import UsageLog
+    from crud import get_usage_logs
+
+    data = get_usage_logs(db, start_date=start_date, end_date=end_date,
+                          material_id=material_id, category=category, source=source,
+                          page=1, page_size=100000)
+
+    wb = Workbook()
+    rows = []
+    for l in data["items"]:
+        purpose = f"生产 {l['product_name']} {l['production_quantity']}" if l["product_name"] else ""
+        rows.append([l["date"], l["material_name"], l["category"] or "",
+                     l["quantity"], l["unit"] or "",
+                     purpose, l["stock_after"] if l["stock_after"] is not None else "",
+                     "生产" if l["source"] == "production" else "试验",
+                     l["operator"], l["notes"] or ""])
+    _new_sheet(wb, "领用台账", ["日期", "原料", "类别", "领用量", "单位", "用途", "领用后余量", "来源", "领用人", "备注"], rows)
+    return _to_xlsx_bytes(wb)
+
+
+def export_additive_usage(db: Session, start_date: str = "", end_date: str = "") -> bytes:
+    from crud import get_additive_usage_summary, get_usage_logs
+
+    wb = Workbook()
+    summary = get_additive_usage_summary(db, start_date=start_date, end_date=end_date)
+    sum_rows = [[s["material_name"], s["total_used"], s["unit"] or "",
+                 s["use_count"], s["last_used_date"] or ""] for s in summary]
+    ws = _new_sheet(wb, "添加剂汇总", ["添加剂名称", "累计用量", "单位", "使用次数", "最近使用日期"], sum_rows)
+
+    # 明细sheet
+    details = get_usage_logs(db, start_date=start_date, end_date=end_date,
+                             category="添加剂", page=1, page_size=100000)
+    det_rows = [[l["date"], l["material_name"], l["quantity"], l["unit"] or "",
+                 f"生产 {l['product_name']} {l['production_quantity']}" if l["product_name"] else "",
+                 l["stock_after"] if l["stock_after"] is not None else "",
+                 l["operator"]] for l in details["items"]]
+    _new_sheet(wb, "添加剂明细", ["日期", "添加剂", "领用量", "单位", "用途", "领用后余量", "领用人"], det_rows)
+
+    # 日期列文本格式（防Excel自动转日期错乱）
+    from openpyxl.styles import Alignment
+    for ws_ in wb.worksheets:
+        for row in ws_.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and len(cell.value) == 10 and cell.value[4] == "-":
+                    cell.number_format = "@"
+                    cell.alignment = Alignment(horizontal="left")
+    return _to_xlsx_bytes(wb)

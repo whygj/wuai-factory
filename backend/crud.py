@@ -8,7 +8,7 @@ from models import (
     User, RawMaterial, Product, InventoryTransaction, ProductTransaction,
     ProductionRecord, ShipmentRecord, OperationLog,
     Customer, Supplier, SalesOrder, PurchaseOrder,
-    LabRecord, MaterialBatch, BatchUsage, PurchasePayment, ReturnRecord, Bom,
+    LabRecord, MaterialBatch, BatchUsage, PurchasePayment, ReturnRecord, Bom, UsageLog,
 )
 from schemas import (
     MaterialCreate, MaterialUpdate, InboundRequest, StockAdjustRequest,
@@ -347,6 +347,8 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
         materials_json = json.dumps([m.model_dump() for m in materials_used], ensure_ascii=False)
         transactions = []
         batch_usages = []
+        # v3.4 领用台账：事务内收集，production_id 拿到后落表，回滚一起消失
+        usage_log_rows = []
 
         for usage in materials_used:
             material = db.query(RawMaterial).filter(RawMaterial.id == usage.material_id).with_for_update().first()
@@ -356,6 +358,16 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
                 raise ValueError(f"原料 {material.name} 库存不足（当前: {material.current_stock}，需要: {usage.quantity}）")
             material.current_stock -= usage.quantity
             material.updated_at = now_cn()
+
+            # 台账行：冗余存当时名/类别（主档改名不漂移），stock_after=扣减后余量
+            usage_log_rows.append({
+                "material_id": material.id,
+                "material_name": material.name,
+                "category": material.category,
+                "quantity": usage.quantity,
+                "unit": usage.unit or material.unit,
+                "stock_after": round(material.current_stock, 4),
+            })
 
             # v3.1 FEFO 扣批次：有在库批次则按到期先后扣并记 batch_usages；
             # 无批次记录（未分批兼容层）只扣总库存，追溯链断在"未分批"——可接受
@@ -436,6 +448,24 @@ def create_production(db: Session, data: ProductionCreate, operator: str) -> Pro
         record.material_cost = round(cost, 2) if has_any_price else None
         # bom_snapshot：提交时实际用量（含手改/替代），配方本身不快照
         record.bom_snapshot = materials_json
+
+        # v3.4 领用台账落表（同事务，N种料=N行；异常回滚时与生产记录一起消失）
+        for row in usage_log_rows:
+            db.add(UsageLog(
+                date=data.date,
+                material_id=row["material_id"],
+                material_name=row["material_name"],
+                category=row["category"],
+                quantity=row["quantity"],
+                unit=row["unit"],
+                stock_after=row["stock_after"],
+                product_id=product.id,
+                product_name=product.name,
+                production_quantity=data.quantity,
+                production_id=record.id,
+                source="production",
+                operator=operator,
+            ))
 
         log_operation(db, operator, "生产登记", "production_records", record.id,
                       f"生产 {product.name} {data.quantity}{data.unit or product.unit}"
@@ -2422,3 +2452,60 @@ def get_gross_margin(db: Session, year: int = None, month: int = None):
         "gross_margin": round(margin, 2),
         "margin_pct": margin_pct,
     }
+
+
+# ==================== Usage Logs (v3.4) ====================
+
+def get_usage_logs(db: Session, start_date: str = "", end_date: str = "", material_id: int = 0,
+                   category: str = "", source: str = "", page: int = 1, page_size: int = 50):
+    """领用台账查询（只读，全角色可看）。冗余字段直接查本表，不join主档。"""
+    query = db.query(UsageLog)
+    if start_date:
+        query = query.filter(UsageLog.date >= start_date)
+    if end_date:
+        query = query.filter(UsageLog.date <= end_date)
+    if material_id:
+        query = query.filter(UsageLog.material_id == material_id)
+    if category:
+        query = query.filter(UsageLog.category == category)
+    if source:
+        query = query.filter(UsageLog.source == source)
+    total = query.count()
+    items = query.order_by(UsageLog.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "items": [{
+        "id": l.id, "date": str(l.date),
+        "material_id": l.material_id, "material_name": l.material_name,
+        "category": l.category, "quantity": l.quantity, "unit": l.unit,
+        "stock_after": l.stock_after,
+        "product_id": l.product_id, "product_name": l.product_name,
+        "production_quantity": l.production_quantity,
+        "production_id": l.production_id,
+        "source": l.source, "operator": l.operator or "",
+        "notes": l.notes or "", "created_at": l.created_at,
+    } for l in items]}
+
+
+def get_additive_usage_summary(db: Session, start_date: str = "", end_date: str = ""):
+    """添加剂台账汇总（GB 2760 监管视图）：category精确匹配'添加剂'，按累计用量降序"""
+    query = db.query(UsageLog).filter(UsageLog.category == "添加剂")
+    if start_date:
+        query = query.filter(UsageLog.date >= start_date)
+    if end_date:
+        query = query.filter(UsageLog.date <= end_date)
+    logs = query.all()
+
+    agg = {}
+    for l in logs:
+        key = (l.material_id, l.material_name)
+        entry = agg.setdefault(key, {
+            "material_id": l.material_id, "material_name": l.material_name,
+            "unit": l.unit, "total_used": 0.0, "use_count": 0, "last_used_date": None,
+        })
+        entry["total_used"] = round(entry["total_used"] + l.quantity, 4)
+        entry["use_count"] += 1
+        if entry["last_used_date"] is None or l.date > entry["last_used_date"]:
+            entry["last_used_date"] = l.date
+    result = sorted(agg.values(), key=lambda x: x["total_used"], reverse=True)
+    for r in result:
+        r["last_used_date"] = str(r["last_used_date"]) if r["last_used_date"] else None
+    return result

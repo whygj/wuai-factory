@@ -1210,6 +1210,63 @@ def gross_margin_report(
     return crud.get_gross_margin(db, year=year or None, month=month or None)
 
 
+# ==================== Usage Logs (v3.4) ====================
+
+@app.get("/api/usage-logs")
+def list_usage_logs(
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    material_id: int = Query(0),
+    category: str = Query(""),
+    source: str = Query(""),
+    page: int = Query(1),
+    page_size: int = Query(50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_usage_logs(db, start_date=start_date, end_date=end_date,
+                               material_id=material_id, category=category, source=source,
+                               page=page, page_size=page_size)
+
+
+@app.get("/api/usage-logs/additive-summary")
+def additive_usage_summary(
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return crud.get_additive_usage_summary(db, start_date=start_date, end_date=end_date)
+
+
+@app.get("/api/export/usage-logs")
+def export_usage_logs(
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    material_id: int = Query(0),
+    category: str = Query(""),
+    source: str = Query(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    today = date.today().strftime("%Y%m%d")
+    content = export_excel.export_usage_logs(db, start_date=start_date, end_date=end_date,
+                                             material_id=material_id, category=category, source=source)
+    return _xlsx_response(content, f"领用台账_{today}.xlsx")
+
+
+@app.get("/api/export/additive-usage")
+def export_additive_usage(
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    today = date.today().strftime("%Y%m%d")
+    content = export_excel.export_additive_usage(db, start_date=start_date, end_date=end_date)
+    return _xlsx_response(content, f"添加剂台账_{today}.xlsx")
+
+
 # ==================== Export (Excel) ====================
 
 from urllib.parse import quote

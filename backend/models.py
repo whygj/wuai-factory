@@ -256,6 +256,31 @@ class LabRecord(Base):
     created_at = Column(DateTime, default=now_cn)
 
 
+class UsageLog(Base):
+    """领用记录台账（v3.4）：生产登记事务内自动写入，N种料=N行，回滚一起消失。
+    material_name/category 刻意冗余——台账监管语义是"当时发生了什么"，
+    主档改名后历史不漂移（与 v3.3 material_cost 快照同一哲学）。只读，无编辑/删除。"""
+    __tablename__ = "usage_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False)  # 生产日期（非提交时间）
+    material_id = Column(Integer, ForeignKey("raw_materials.id"), nullable=False)
+    material_name = Column(Text, nullable=False)
+    category = Column(Text)
+    quantity = Column(REAL, nullable=False)
+    unit = Column(Text)
+    stock_after = Column(REAL)  # 领用后库存余量（监管看点）
+    product_id = Column(Integer, ForeignKey("products.id"))
+    product_name = Column(Text)  # 用途："生产 草莓果酱 300盒"
+    production_quantity = Column(REAL)
+    production_id = Column(Integer, ForeignKey("production_records.id"))
+    source = Column(Text, default="production")  # production / lab
+    related_id = Column(Integer)  # lab时=lab_records.id
+    operator = Column(Text)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=now_cn)
+
+
 class MaterialBatch(Base):
     """原料批次（v3.1）：采购入库时可选创建，生产按FEFO消耗。
     未填批次的入库不建记录——历史"未分批"库存走兼容层。"""
