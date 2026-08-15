@@ -164,6 +164,10 @@ export const previewBom = (data) => api.post('/production/preview-bom', data)
 export const getCostReport = (params) => api.get('/reports/cost', { params })
 export const getGrossMargin = (params) => api.get('/reports/gross-margin', { params })
 
+// Usage Logs (v3.4)
+export const getUsageLogs = (params) => api.get('/usage-logs', { params })
+export const getAdditiveUsageSummary = (params) => api.get('/usage-logs/additive-summary', { params })
+
 // Operation Logs
 export const getOperationLogs = (params) => api.get('/operation-logs', { params })
 export const getOperationLogFilters = () => api.get('/operation-logs/filters')

@@ -50,6 +50,7 @@
               <el-select v-model="item.material_id" placeholder="选择原料" style="width: 100%">
                 <el-option v-for="m in materials" :key="m.id" :label="`${m.name} (库存:${m.current_stock}${m.unit})`" :value="m.id" />
               </el-select>
+              <span v-if="isAdditive(item.material_id)" class="additive-badge">添加剂</span>
             </el-col>
             <el-col :span="8">
               <el-input-number v-model="item.quantity" :min="0.01" :precision="2" placeholder="数量" style="width: 100%" @change="onQtyChange(idx)" />
@@ -134,6 +135,11 @@ const form = ref({
 function getMaterialUnit(id) {
   const m = materials.value.find(m => m.id === id)
   return m ? m.unit : ''
+}
+
+function isAdditive(id) {
+  const m = materials.value.find(m => m.id === id)
+  return m ? m.category === '添加剂' : false
 }
 
 function addMaterial() {
@@ -262,6 +268,17 @@ onMounted(async () => {
   border-radius: 6px;
   font-size: 13px;
   color: #C62828;
+  font-weight: 600;
+}
+.additive-badge {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 8px;
+  background: #FFF3E0;
+  border: 1px solid #E65100;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #E65100;
   font-weight: 600;
 }
 

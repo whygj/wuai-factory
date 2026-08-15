@@ -76,6 +76,9 @@
             <router-link to="/batch-trace" class="nav-item" :class="{ active: $route.path === '/batch-trace' }">
               <span>批次追溯</span>
             </router-link>
+            <router-link to="/usage-logs" class="nav-item" :class="{ active: $route.path === '/usage-logs' }">
+              <span>领用记录</span>
+            </router-link>
           </div>
         </div>
 
